@@ -886,6 +886,43 @@ textarea {
 .calendar .fc-theme-standard .fc-scrollgrid {
   border-radius: var(--radius);
 }
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.calendar-title {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 0;
+}
+.calendar-toolbar .seg .btn.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.calendar-body {
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+/* Scrolling without scrollbars: the month grid rolls with the wheel and
+   the week/day grids keep their own scroll, just with the bar hidden. */
+.calendar .fc-scroller {
+  scrollbar-width: none;
+}
+.calendar .fc-scroller::-webkit-scrollbar {
+  display: none;
+}
+.calendar .fc-day-dim .fc-daygrid-day-number {
+  color: var(--text-3);
+}
+.calendar .fc-day-dim {
+  background: color-mix(in srgb, var(--bg) 55%, var(--surface));
+}
 
 /* ---- notes ------------------------------------------------------------- */
 .note-yellow {

@@ -318,6 +318,20 @@ $task = Sql "select title, due_date, due_time, priority, remind_minutes from tas
 Check "빠른 입력으로 할 일 저장 (시간·우선순위·알림)" ($task.Count -eq 1 -and $task[0][2] -eq $due.ToString("HH:mm") -and $task[0][3] -eq 3 -and $task[0][4] -eq 0) ($task | ConvertTo-Json -Compress)
 Shot "07-quick-add"
 
+# ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
+$nav = Uia $main.Hwnd "*캘린더*" -Like
+if ($nav) { ClickEl $nav }
+Start-Sleep -Seconds 2
+Check "캘린더가 이번 달 제목으로 열림" ([bool](Uia $main.Hwnd (Get-Date -Format "yyyy년 M월")))
+[W]::SetCursorPos($main.L + 900, $main.T + 450) | Out-Null # grid, clear of the stickies
+for ($i = 0; $i -lt 5; $i++) { [W]::mouse_event(0x0800, 0, 0, [uint32]::MaxValue - 119, [UIntPtr]::Zero); Start-Sleep -Milliseconds 250 } # 5 notches down
+Start-Sleep -Seconds 1
+Check "휠 5칸이면 다음 달로 넘어감" ([bool](Uia $main.Hwnd ((Get-Date).AddMonths(1).ToString("yyyy년 M월"))))
+Shot "07b-calendar-wheel"
+$nav = Uia $main.Hwnd "*오늘*" -Like
+if ($nav) { ClickEl $nav }
+Start-Sleep -Seconds 1
+
 # ---- reminder notification -----------------------------------------------------------
 # The reminder fires at the due minute; the main window checks every 30 s.
 $wait = [int](($due - (Get-Date)).TotalSeconds) + 45
