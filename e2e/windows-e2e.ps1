@@ -342,6 +342,17 @@ $entry = foreach ($hive in "HKCU", "HKLM") {
   $run.PSObject.Properties | Where-Object { "$($_.Value)" -like "*daily-planner*" } | ForEach-Object { "$hive $($_.Name) = $($_.Value)" }
 }
 Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$entry"
+
+# ---- settings: update check (no release to find on CI, so any answer counts) ----
+$btn = Uia $main.Hwnd "업데이트 확인"
+Check "설정에 '업데이트 확인' 버튼" ([bool]$btn)
+if ($btn) { ClickEl $btn }
+$status = $null
+for ($i = 0; $i -lt 20 -and -not $status; $i++) {
+  Start-Sleep -Seconds 1
+  foreach ($pat in "최신 버전이에요*", "새 버전*", "업데이트 확인 실패*") { $status = Uia $main.Hwnd $pat -Like; if ($status) { break } }
+}
+Check "업데이트 확인이 답을 줌" ([bool]$status) $(if ($status) { $status.Current.Name } else { "" })
 Shot "09-settings"
 
 # ---- closing the main window keeps the app in the tray ----------------------------

@@ -33,7 +33,8 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: npm ci
-      - run: npx tauri build
+      # No signing key here; the release workflow makes the signed update package.
+      - run: npx tauri build --config src-tauri/tauri.ci.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: DailyPlanner-windows-installer

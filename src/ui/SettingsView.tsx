@@ -4,6 +4,7 @@ import { SHORTCUTS, isAutostartEnabled, notify, setAutostart } from "../platform
 import { isTauri } from "../platform/env";
 import { BRIEFING_ENABLED_KEY, maybeShowBriefing } from "../background";
 import { showTodaySticky } from "./windows";
+import { appVersion, checkForUpdate, type AvailableUpdate } from "../platform/update";
 
 function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -12,6 +13,86 @@ function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean;
 }
 
 const shortcutLabel = (s: string) => s.replace("CommandOrControl", "Ctrl").replace(/\+/g, " + ");
+
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "latest" }
+  | { kind: "available"; update: AvailableUpdate }
+  | { kind: "installing"; percent: number | null }
+  | { kind: "failed"; reason: string };
+
+function UpdateRow() {
+  const [version, setVersion] = useState("");
+  const [state, setState] = useState<UpdateState>({ kind: "idle" });
+
+  useEffect(() => {
+    appVersion().then(setVersion);
+  }, []);
+
+  const check = async () => {
+    setState({ kind: "checking" });
+    try {
+      const update = await checkForUpdate();
+      setState(update ? { kind: "available", update } : { kind: "latest" });
+    } catch (e) {
+      setState({ kind: "failed", reason: String(e) });
+    }
+  };
+
+  const install = async (update: AvailableUpdate) => {
+    setState({ kind: "installing", percent: 0 });
+    try {
+      await update.install((percent) => setState({ kind: "installing", percent }));
+    } catch (e) {
+      setState({ kind: "failed", reason: String(e) });
+    }
+  };
+
+  let status: string;
+  switch (state.kind) {
+    case "idle":
+      status = `현재 버전 ${version}`;
+      break;
+    case "checking":
+      status = "확인 중...";
+      break;
+    case "latest":
+      status = `최신 버전이에요 (${version})`;
+      break;
+    case "available":
+      status = `새 버전 ${state.update.version}이 나왔어요 (현재 ${version})`;
+      break;
+    case "installing":
+      status = state.percent === null ? "내려받는 중..." : state.percent < 100 ? `내려받는 중... ${state.percent}%` : "설치 중... 잠시 후 다시 열려요";
+      break;
+    case "failed":
+      status = "업데이트 확인 실패 · 인터넷 연결을 확인해 주세요";
+      break;
+  }
+
+  return (
+    <div className="setting-row">
+      <div>
+        <div className="setting-name">업데이트</div>
+        <div className="setting-desc" role="status" title={state.kind === "failed" ? state.reason : undefined}>
+          {status}
+        </div>
+      </div>
+      <div className="button-row">
+        {state.kind === "available" ? (
+          <button className="btn btn-primary" onClick={() => install(state.update)}>
+            지금 업데이트
+          </button>
+        ) : (
+          <button className="btn" onClick={check} disabled={!isTauri || state.kind === "checking" || state.kind === "installing"}>
+            업데이트 확인
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function SettingsView() {
   const [autostart, setAuto] = useState(false);
@@ -77,6 +158,8 @@ export function SettingsView() {
         </div>
       </div>
 
+      <UpdateRow />
+
       <h3 className="settings-sub">단축키 (어느 프로그램에서든 동작)</h3>
       <div className="shortcut-row">
         <kbd>{shortcutLabel(SHORTCUTS.newNote)}</kbd> 새 스티커 메모
@@ -101,7 +184,7 @@ export function SettingsView() {
         </li>
       </ul>
 
-      <p className="muted small">데이터는 이 PC에만 저장돼요 (planner.db). PC↔폰 동기화는 2단계에서 추가될 예정이에요.</p>
+      <p className="muted small">데이터는 이 PC에만 저장돼요 (planner.db). 업데이트해도 그대로 남아요. PC↔폰 동기화는 2단계에서 추가될 예정이에요.</p>
     </div>
   );
 }

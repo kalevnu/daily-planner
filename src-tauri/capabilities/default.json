@@ -2,7 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for the main window, the briefing and the sticky windows",
-  "windows": ["main", "briefing", "today-sticky", "sticky-host", "note-*"],
+  "windows": [
+    "main",
+    "briefing",
+    "today-sticky",
+    "sticky-host",
+    "note-*"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -18,6 +24,8 @@
     "notification:default",
     "autostart:default",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister-all"
+    "global-shortcut:allow-unregister-all",
+    "updater:default",
+    "process:default"
   ]
 }

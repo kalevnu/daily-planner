@@ -92,6 +92,8 @@ pub fn run() {
             Some(vec![AUTOSTART_FLAG]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![set_topmost])
         .setup(|app| {
             // The main window starts hidden; show it unless this is a login start.

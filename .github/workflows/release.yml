@@ -1,0 +1,39 @@
+# Publishes a release when a version tag (v0.2.0 ...) is pushed: builds the
+# Windows installer, signs the update package and uploads both with the
+# latest.json the app's updater reads.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The updater only installs builds signed with this key.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Daily Planner ${{ github.ref_name }}"
+          releaseBody: "설치 파일: Daily Planner_x.y.z_x64-setup.exe. 이미 설치되어 있다면 앱의 설정 > 업데이트에서 받을 수 있어요."
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

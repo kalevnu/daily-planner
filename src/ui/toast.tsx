@@ -4,6 +4,7 @@ interface Toast {
   id: number;
   message: string;
   undo?: () => void;
+  actionLabel: string;
 }
 
 let toasts: Toast[] = [];
@@ -15,12 +16,12 @@ function publish() {
 }
 
 // Shows a short message at the bottom. Deletions offer "되돌리기" instead of a
-// confirmation dialog.
-export function showToast(message: string, undo?: () => void) {
-  const toast = { id: nextId++, message, undo };
+// confirmation dialog; other callers can name the action and keep it longer.
+export function showToast(message: string, undo?: () => void, actionLabel = "되돌리기", durationMs = 5000) {
+  const toast = { id: nextId++, message, undo, actionLabel };
   toasts = [...toasts.slice(-2), toast];
   publish();
-  setTimeout(() => dismiss(toast.id), 5000);
+  setTimeout(() => dismiss(toast.id), durationMs);
 }
 
 function dismiss(id: number) {
@@ -47,7 +48,7 @@ export function Toasts() {
                 dismiss(t.id);
               }}
             >
-              되돌리기
+              {t.actionLabel}
             </button>
           )}
         </div>

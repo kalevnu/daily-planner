@@ -6,6 +6,8 @@ import { dueReminders } from "./core/today";
 import { createRow, getSetting, listAll, setSetting } from "./data/store";
 import { isTauri } from "./platform/env";
 import { notify, onAppEvent, openBriefing, registerShortcuts, showMainWindow } from "./platform/desktop";
+import { checkForUpdate } from "./platform/update";
+import { showToast } from "./ui/toast";
 import { LIST_COLORS, createNote, showNote } from "./ui/actions";
 import { TODAY_STICKY_OPEN_KEY, showTodaySticky } from "./ui/windows";
 
@@ -62,6 +64,23 @@ async function checkReminders() {
   await setSetting(FIRED_KEY, JSON.stringify(fired));
 }
 
+const UPDATE_NOTIFIED_KEY = "update_notified_version";
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+
+// Quietly looks for a new version and says so once per version; installing
+// is up to the user (설정 > 업데이트, or the toast).
+async function checkUpdates() {
+  try {
+    const update = await checkForUpdate();
+    if (!update || (await getSetting(UPDATE_NOTIFIED_KEY)) === update.version) return;
+    await setSetting(UPDATE_NOTIFIED_KEY, update.version);
+    showToast(`새 버전 ${update.version}이 나왔어요`, () => update.install(() => {}), "지금 업데이트", 30000);
+    await notify("Daily Planner 새 버전", `${update.version} 버전을 설정 > 업데이트에서 설치할 수 있어요.`);
+  } catch {
+    // No network or no release yet; try again later.
+  }
+}
+
 let started = false;
 
 export async function startBackground() {
@@ -89,4 +108,7 @@ export async function startBackground() {
 
   await maybeShowBriefing();
   setInterval(() => maybeShowBriefing(), 60000);
+
+  setTimeout(checkUpdates, 15000);
+  setInterval(checkUpdates, UPDATE_CHECK_INTERVAL);
 }
