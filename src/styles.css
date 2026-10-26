@@ -1166,6 +1166,51 @@ textarea {
   flex-direction: column;
   color: var(--note-text);
   overflow: hidden;
+  position: relative;
+}
+/* Task editor inside a sticky or the briefing: covers the list, below the bar. */
+.overlay-editor {
+  position: absolute;
+  inset: 28px 0 0 0;
+  background: inherit;
+  z-index: 5;
+  display: flex;
+}
+.briefing {
+  position: relative;
+}
+.briefing .overlay-editor {
+  inset: 0 0 56px 0;
+  background: var(--surface);
+}
+.overlay-editor .editor {
+  /* Not the slide-in panel of a narrow main window: it fills the overlay. */
+  position: static !important;
+  width: 100%;
+  height: 100%;
+  border-left: none;
+  background: transparent;
+  box-shadow: none;
+}
+.overlay-editor .editor-head {
+  padding: 6px 6px 6px 12px;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+.overlay-editor .editor-title {
+  font-size: 15px;
+  width: 0; /* flex: 1 shares the row instead of the input's own width */
+  min-width: 0;
+}
+.overlay-editor .editor-body {
+  padding: 10px 12px;
+  gap: 10px;
+}
+.sticky .overlay-editor input,
+.sticky .overlay-editor select,
+.sticky .overlay-editor textarea {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: inherit;
 }
 .sticky-bar {
   display: flex;

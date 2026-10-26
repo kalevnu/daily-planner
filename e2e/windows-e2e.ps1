@@ -324,6 +324,23 @@ $t2 = Sql "select title, due_date from tasks where title like '%e2e 마감%'"
 Check "'10월 31일까지 …' 식 입력에서 제목이 온전하고 날짜가 잡힘" ($t2.Count -eq 1 -and $t2[0][0] -eq "e2e 마감 보고서" -and $t2[0][1] -eq $dl.ToString("yyyy-MM-dd")) ($t2 | ConvertTo-Json -Compress)
 Shot "07-quick-add"
 
+# ---- today sticky: tap a task to edit it right there -----------------------------
+$today = (First "오늘 할 일")
+if ($today) {
+  $item = Uia $today.Hwnd "*e2e alarm*" -Like
+  Check "오늘 할 일 스티커에 새 할 일이 보임" ([bool]$item)
+  if ($item) { ClickEl $item } # a text element has no Invoke, so this falls back to a real click
+  Start-Sleep -Seconds 1
+  Check "스티커에서 항목을 누르면 그 자리에서 편집 화면" ([bool](Uia $today.Hwnd "우선순위"))
+  Shot "07a-sticky-edit"
+  $x = @(Uia $today.Hwnd "닫기")
+  # The editor's own 닫기 sits below the bar's; press whichever is lower.
+  $all = [System.Windows.Automation.AutomationElement]::FromHandle($today.Hwnd).FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -eq "닫기" } | Sort-Object { $_.Current.BoundingRectangle.Y }
+  if ($all.Count -ge 2) { ClickEl $all[-1] }
+  Start-Sleep -Seconds 1
+  Check "편집 닫으면 목록으로 돌아옴" (-not (Uia $today.Hwnd "우선순위"))
+}
+
 # ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
 $nav = Uia $main.Hwnd "*캘린더*" -Like
 if ($nav) { ClickEl $nav }

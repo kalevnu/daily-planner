@@ -20,6 +20,7 @@ import { NOTE_COLORS, createNote, hideNote } from "./actions";
 import { useTable, useToday } from "./hooks";
 import { NoteEditor } from "./NoteEditor";
 import { QuickAdd, TaskItem } from "./tasks";
+import { TaskEditor } from "./TaskEditor";
 import { TodayView } from "./TodayView";
 import { Toasts } from "./toast";
 
@@ -36,11 +37,17 @@ export async function showTodaySticky() {
 }
 
 export function BriefingWindow() {
+  const [editId, setEditId] = useState<string | null>(null);
   return (
     <div className="briefing">
       <div className="briefing-scroll">
-        <TodayView briefing />
+        <TodayView briefing onOpenTask={(t) => setEditId(t.id)} selectedTaskId={editId ?? undefined} />
       </div>
+      {editId && (
+        <div className="overlay-editor">
+          <TaskEditor taskId={editId} onClose={() => setEditId(null)} />
+        </div>
+      )}
       <footer className="briefing-foot">
         <button className="btn" onClick={() => showTodaySticky()}>
           📌 오늘 할 일 바탕화면에 띄우기
@@ -67,6 +74,7 @@ export function TodayStickyWindow() {
   const items = [...s.overdue, ...s.tasks];
   const [pinned, setPinned] = useState(true);
   const wantPinned = useRef(true);
+  const [editId, setEditId] = useState<string | null>(null);
 
   useEffect(() => {
     getSetting(TODAY_STICKY_PINNED_KEY).then((v) => {
@@ -124,15 +132,20 @@ export function TodayStickyWindow() {
         ))}
         <div className="task-list">
           {items.map((t) => (
-            <TaskItem key={t.id} task={t} lists={lists} compact />
+            <TaskItem key={t.id} task={t} lists={lists} compact onOpen={(x) => setEditId(x.id)} />
           ))}
           {s.doneToday.map((t) => (
-            <TaskItem key={t.id} task={t} lists={lists} compact />
+            <TaskItem key={t.id} task={t} lists={lists} compact onOpen={(x) => setEditId(x.id)} />
           ))}
         </div>
         {items.length === 0 && s.doneToday.length === 0 && <p className="empty">오늘 할 일이 없어요.</p>}
       </div>
       <QuickAdd defaults={{ due_date: today }} placeholder="오늘 할 일 추가" />
+      {editId && (
+        <div className="overlay-editor">
+          <TaskEditor taskId={editId} onClose={() => setEditId(null)} />
+        </div>
+      )}
       <Toasts />
     </div>
   );
