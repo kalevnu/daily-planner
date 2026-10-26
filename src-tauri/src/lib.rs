@@ -53,6 +53,34 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Puts the calling window above all others, or back among them, straight
+/// through Win32. The stickies share one owner window, and Windows takes
+/// "always on top" from all of them when one gives it up; the toolkit then
+/// skips a repeat set_always_on_top(true) because it believes nothing changed.
+#[tauri::command]
+fn set_topmost(window: tauri::Window, on: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        // SAFETY: a plain Win32 call on a window handle owned by this process.
+        let ok = unsafe {
+            SetWindowPos(hwnd.0 as _, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        };
+        if ok == 0 {
+            return Err("SetWindowPos failed".into());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        window.set_always_on_top(on).map_err(|e| e.to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -64,6 +92,7 @@ pub fn run() {
             Some(vec![AUTOSTART_FLAG]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![set_topmost])
         .setup(|app| {
             // The main window starts hidden; show it unless this is a login start.
             if !std::env::args().any(|arg| arg == AUTOSTART_FLAG) {

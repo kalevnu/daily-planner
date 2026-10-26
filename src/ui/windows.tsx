@@ -1,15 +1,17 @@
 // Content of the secondary windows: the morning briefing, the "today" sticky
 // and individual sticky notes.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildToday } from "../core/today";
 import { formatDateKo, formatTimeKo, timePart } from "../core/dates";
 import { getSetting, setSetting, updateRow } from "../data/store";
 import {
+  announcePinChange,
   closeCurrent,
+  keepPinned,
   openTodaySticky,
   rememberStickyFocus,
   runStickyHost,
-  setCurrentAlwaysOnTop,
+  setCurrentPinned,
   showMainWindow,
   trackGeometry,
   type WindowGeometry,
@@ -64,12 +66,17 @@ export function TodayStickyWindow() {
   const s = buildToday(tasks, events, today);
   const items = [...s.overdue, ...s.tasks];
   const [pinned, setPinned] = useState(true);
+  const wantPinned = useRef(true);
 
   useEffect(() => {
-    getSetting(TODAY_STICKY_PINNED_KEY).then((v) => setPinned(v !== "0"));
+    getSetting(TODAY_STICKY_PINNED_KEY).then((v) => {
+      wantPinned.current = v !== "0";
+      setPinned(wantPinned.current);
+    });
     const offs: (() => void)[] = [];
     trackGeometry((g) => setSetting(TODAY_STICKY_GEOMETRY_KEY, JSON.stringify(g))).then((f) => offs.push(f));
     rememberStickyFocus().then((f) => offs.push(f));
+    keepPinned(() => wantPinned.current).then((f) => offs.push(f));
     return () => offs.forEach((f) => f());
   }, []);
 
@@ -87,9 +94,11 @@ export function TodayStickyWindow() {
           title={pinned ? "항상 위 해제" : "항상 위에 고정"}
           aria-label={pinned ? "항상 위 해제" : "항상 위에 고정"}
           onClick={async () => {
-            await setSetting(TODAY_STICKY_PINNED_KEY, pinned ? "0" : "1");
-            await setCurrentAlwaysOnTop(!pinned);
+            wantPinned.current = !pinned;
             setPinned(!pinned);
+            await setCurrentPinned(!pinned);
+            await setSetting(TODAY_STICKY_PINNED_KEY, pinned ? "0" : "1");
+            await announcePinChange();
           }}
         >
           📌
@@ -144,15 +153,19 @@ export function NoteWindow({ id }: { id: string }) {
     if (loaded && (!note || !note.is_open)) closeCurrent();
   }, [loaded, note]);
 
+  const pinned = !!note?.is_pinned;
+  const wantPinned = useRef(pinned);
+  wantPinned.current = pinned;
+
   useEffect(() => {
     const offs: (() => void)[] = [];
     trackGeometry((g) => updateRow("notes", id, { pos_x: g.x, pos_y: g.y, width: g.width, height: g.height })).then((f) => offs.push(f));
     rememberStickyFocus().then((f) => offs.push(f));
+    keepPinned(() => wantPinned.current).then((f) => offs.push(f));
     return () => offs.forEach((f) => f());
   }, [id]);
 
   if (!note) return null;
-  const pinned = !!note.is_pinned;
 
   return (
     <div className={`sticky note-${note.color}`}>
@@ -186,8 +199,10 @@ export function NoteWindow({ id }: { id: string }) {
           title={pinned ? "항상 위 해제" : "항상 위에 고정"}
           aria-label={pinned ? "항상 위 해제" : "항상 위에 고정"}
           onClick={async () => {
+            wantPinned.current = !pinned;
+            await setCurrentPinned(!pinned);
             await updateRow("notes", id, { is_pinned: pinned ? 0 : 1 });
-            await setCurrentAlwaysOnTop(!pinned);
+            await announcePinChange();
           }}
         >
           📌

@@ -189,10 +189,31 @@ export async function closeCurrent() {
   await getCurrentWindow().close();
 }
 
-export async function setCurrentAlwaysOnTop(on: boolean) {
+// Pinning goes through our own command instead of setAlwaysOnTop: on
+// Windows, when one window gives up "always on top", every window sharing
+// its owner (all stickies share the host) loses it too, and the toolkit
+// skips a repeat setAlwaysOnTop(true) because it believes nothing changed.
+export async function setCurrentPinned(on: boolean) {
   if (!isTauri) return;
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().setAlwaysOnTop(on);
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_topmost", { on });
+}
+
+const PIN_EVENT = "sticky-pin-changed";
+
+// Tells the other stickies that a pin changed, so each puts its own back.
+export async function announcePinChange() {
+  if (!isTauri) return;
+  const { emit } = await import("@tauri-apps/api/event");
+  await emit(PIN_EVENT);
+}
+
+export async function keepPinned(isPinned: () => boolean): Promise<() => void> {
+  if (!isTauri) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen(PIN_EVENT, () => {
+    if (isPinned()) setCurrentPinned(true);
+  });
 }
 
 // Calls `save` with the window's logical geometry after it is moved or resized.

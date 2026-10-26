@@ -13,6 +13,7 @@ $ErrorActionPreference = "Stop"
 trap { Check "스크립트 오류 없음" $false "$($_.InvocationInfo.ScriptLineNumber): $_"; continue }
 # Run in Korean time, as the user does; the briefing waits until 5 a.m. local.
 Set-TimeZone -Id "Korea Standard Time"
+[System.TimeZoneInfo]::ClearCachedData() # so Get-Date in this process follows
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
 
@@ -109,11 +110,15 @@ function First($title) { Visible $title | Select-Object -First 1 }
 function AltTabEntries { @(AppWindows | Where-Object { $_.Visible -and -not $_.Tool -and ($_.Owner -eq [IntPtr]::Zero -or $_.AppWin) }) }
 
 $DbPath = Join-Path $env:APPDATA "com.kalevnu.dailyplanner\planner.db"
+# Rows as an array of arrays, even for one row or one column (PowerShell
+# likes to unwrap those).
 function Sql($query) {
-  $py = "import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps(c.execute(sys.argv[2]).fetchall(), ensure_ascii=False))"
+  $py = "import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps({'rows': c.execute(sys.argv[2]).fetchall()}, ensure_ascii=False))"
   $out = python -c $py $DbPath $query
-  return ,($out | ConvertFrom-Json)
+  $rows = @(($out | ConvertFrom-Json).rows)
+  return ,@($rows | ForEach-Object { ,@($_) })
 }
+function Cell($query) { (Sql $query)[0][0] }
 
 # The WebView builds its accessibility tree lazily, so look a few times.
 function Uia($hwnd, $name, [switch] $Like) {
@@ -173,7 +178,7 @@ if ((Get-Date).Hour -ge 5) {
 }
 $notes = Visible "메모"
 Check "환영 메모 창이 정확히 1개" ($notes.Count -eq 1) "count=$($notes.Count)"
-Check "DB: 메모 1개, 목록 2개" (((Sql "select count(*) from notes")[0][0] -eq 1) -and ((Sql "select count(*) from lists")[0][0] -eq 2))
+Check "DB: 메모 1개, 목록 2개" (((Cell "select count(*) from notes") -eq 1) -and ((Cell "select count(*) from lists") -eq 2))
 
 $briefing = (First "오늘 브리핑")
 if ($briefing) {
@@ -189,7 +194,7 @@ Start-App | Out-Null
 Shot "02-restart"
 Check "재시작 후에도 메모 창 1개" ((Visible "메모").Count -eq 1) "count=$((Visible '메모').Count)"
 Check "같은 날 재시작하면 브리핑 안 뜸" ((Visible "오늘 브리핑").Count -eq 0)
-Check "재시작 후 DB 메모 1개" ((Sql "select count(*) from notes")[0][0] -eq 1)
+Check "재시작 후 DB 메모 1개" ((Cell "select count(*) from notes") -eq 1)
 
 # ---- new notes with the global shortcut --------------------------------------
 Keys "^%n"; Start-Sleep -Seconds 3
@@ -203,7 +208,8 @@ Check "새 메모가 겹치지 않고 비켜서 열림" ($positions.Count -eq $n
 Keys "# Test{ENTER}{[}{]} milk{ENTER}eggs{ENTER}{ENTER}**bold** text"
 for ($i = 0; $i -lt 10; $i++) {
   Start-Sleep -Seconds 1
-  $content = (Sql "select content from notes order by created_at desc limit 1")[0][0]
+  $content = Cell "select content from notes order by created_at desc limit 1"
+  Write-Host "  saved so far: $($content -replace "`n", '\n')"
   if ($content -like "*bold*") { break }
 }
 Check "마크다운 입력이 서식으로 저장됨" ($content -eq "# Test`n`n- [ ] milk`n- [ ] eggs`n`n**bold** text") ($content -replace "`n", "\n")
@@ -249,7 +255,7 @@ $n = (First "메모")
 Click ($n.R - 18) ($n.T + 18)
 Start-Sleep -Seconds 2
 Check "메모 X 버튼으로 창이 닫힘" ((Visible "메모").Count -eq 2) "count=$((Visible '메모').Count)"
-Check "닫은 메모는 DB에 남고 열림 표시만 꺼짐" (((Sql "select count(*) from notes")[0][0] -eq 3) -and ((Sql "select count(*) from notes where is_open=1")[0][0] -eq 2))
+Check "닫은 메모는 DB에 남고 열림 표시만 꺼짐" (((Cell "select count(*) from notes") -eq 3) -and ((Cell "select count(*) from notes where is_open=1") -eq 2))
 
 # ---- today sticky and its pin ---------------------------------------------------
 Keys "^%t"; Start-Sleep -Seconds 3
@@ -273,7 +279,7 @@ if ($today) {
   DumpWindows "after unpin"
   $today = (First "오늘 할 일")
   Check "📌 누르면 항상 위 해제" (-not $today.Topmost)
-  Check "고정 해제가 저장됨" ((Sql "select value from settings where id='today_sticky_pinned'")[0][0] -eq "0")
+  Check "고정 해제가 저장됨" ((Cell "select value from settings where id='today_sticky_pinned'") -eq "0")
   $stillOnTop = @(Visible "메모" | Where-Object Topmost)
   Check "오늘 할 일만 해제되고 고정된 메모는 그대로 항상 위" ($stillOnTop.Count -eq (Visible "메모").Count) "topmost notes=$($stillOnTop.Count)/$((Visible '메모').Count)"
   $pin = Uia $today.Hwnd "항상 위에 고정"
@@ -281,7 +287,19 @@ if ($today) {
   Start-Sleep -Seconds 1
   DumpWindows "after re-pin"
   Check "📌 다시 누르면 항상 위" ((First "오늘 할 일").Topmost)
-  Check "다시 고정이 저장됨" ((Sql "select value from settings where id='today_sticky_pinned'")[0][0] -eq "1")
+  Check "다시 고정이 저장됨" ((Cell "select value from settings where id='today_sticky_pinned'") -eq "1")
+  # The same the other way round: a note's pin is its own.
+  $note = (First "메모")
+  $pin = Uia $note.Hwnd "항상 위 해제"
+  if ($pin) { ClickEl $pin }
+  Start-Sleep -Seconds 1
+  DumpWindows "after note unpin"
+  Check "메모 📌 해제해도 오늘 할 일은 항상 위 유지" ((First "오늘 할 일").Topmost)
+  Check "메모 📌 해제가 저장됨" ((Cell "select count(*) from notes where is_open=1 and is_pinned=0") -eq 1)
+  $pin = Uia $note.Hwnd "항상 위에 고정"
+  if ($pin) { ClickEl $pin }
+  Start-Sleep -Seconds 1
+  Check "메모 📌 다시 고정" (@(Visible "메모" | Where-Object Topmost).Count -eq (Visible "메모").Count)
 }
 $briefing = (First "오늘 브리핑")
 if ($briefing) { $btn = Uia $briefing.Hwnd "오늘 시작하기"; if ($btn) { ClickEl $btn } }
@@ -305,8 +323,8 @@ Shot "07-quick-add"
 $wait = [int](($due - (Get-Date)).TotalSeconds) + 45
 if ($wait -gt 0) { Start-Sleep -Seconds $wait }
 Shot "08-notification"
-$fired = (Sql "select value from settings where id='fired_reminders'")
-Check "알림이 발송됨 (발송 기록)" ($fired.Count -eq 1 -and $fired[0][0] -like "*task:*") ($fired | ConvertTo-Json -Compress)
+$fired = "$(Cell "select value from settings where id='fired_reminders'")"
+Check "알림이 발송됨 (발송 기록)" ($fired -like "*task:*") $fired
 
 # ---- settings: autostart -----------------------------------------------------------
 $main = (First "Daily Planner")
@@ -317,11 +335,13 @@ Start-Sleep -Seconds 1
 $toggle = Uia $main.Hwnd "자동 실행"
 if ($toggle) { ClickEl $toggle }
 Start-Sleep -Seconds 2
-$run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue
-$run.PSObject.Properties | Where-Object Name -notlike "PS*" | ForEach-Object { Write-Host "  Run: $($_.Name) = $($_.Value)" }
-Write-Host "  toggle found=$([bool]$toggle) checked=$(if ($toggle) { try { $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState } catch { 'n/a' } })"
-$entry = $run.PSObject.Properties | Where-Object { "$($_.Value)" -like "*daily-planner*" }
-Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$($entry.Value)"
+# The entry lands in HKLM when the app runs elevated (as on CI) and in HKCU
+# on a normal PC; both start it at login.
+$entry = foreach ($hive in "HKCU", "HKLM") {
+  $run = Get-ItemProperty "${hive}:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue
+  $run.PSObject.Properties | Where-Object { "$($_.Value)" -like "*daily-planner*" } | ForEach-Object { "$hive $($_.Name) = $($_.Value)" }
+}
+Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$entry"
 Shot "09-settings"
 
 # ---- closing the main window keeps the app in the tray ----------------------------
