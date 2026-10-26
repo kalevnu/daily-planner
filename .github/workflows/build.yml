@@ -41,3 +41,14 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
+      # Install the real build and drive it on the runner's desktop.
+      - name: End-to-end test on Windows
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          ./e2e/windows-e2e.ps1 -Installer $installer.FullName -OutDir e2e-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-e2e-screenshots
+          path: e2e-out

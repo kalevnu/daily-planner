@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseQuickAdd } from "../src/core/quickParse";
+import { tidyMarkdown } from "../src/core/markdown";
 import { describeRule, expandEvent, nextOccurrence, occursOn } from "../src/core/recurrence";
 import { buildToday, completionPatch, dueReminders } from "../src/core/today";
 import type { CalendarEvent, Task, TaskList } from "../src/core/types";
@@ -145,5 +146,12 @@ describe("reminders", () => {
     const due = dueReminders(tasks, events, now);
     expect(due.map((r) => r.title).sort()).toEqual(["report", "standup"]);
     expect(due.find((r) => r.title === "report")!.body).toBe("10분 후 (오전 10:00)");
+  });
+});
+
+describe("tidyMarkdown", () => {
+  it("tightens lists and turns hard breaks into newlines", () => {
+    expect(tidyMarkdown("hi\n\n- [x] one\n\n- [ ] two\n\n점심\\\n저녁\n")).toBe("hi\n\n- [x] one\n- [ ] two\n\n점심\n저녁");
+    expect(tidyMarkdown("# t\n\n1. a\n2. b")).toBe("# t\n\n1. a\n2. b");
   });
 });

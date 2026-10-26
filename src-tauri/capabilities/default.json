@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for the main window, the briefing and the sticky windows",
-  "windows": ["main", "briefing", "today-sticky", "note-*"],
+  "windows": ["main", "briefing", "today-sticky", "sticky-host", "note-*"],
   "permissions": [
     "core:default",
     "core:window:allow-show",

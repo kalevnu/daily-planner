@@ -4,22 +4,33 @@ import { useEffect, useState } from "react";
 import { buildToday } from "../core/today";
 import { formatDateKo, formatTimeKo, timePart } from "../core/dates";
 import { getSetting, setSetting, updateRow } from "../data/store";
-import { closeCurrent, openTodaySticky, setCurrentAlwaysOnTop, showMainWindow, trackGeometry, type WindowGeometry } from "../platform/desktop";
+import {
+  closeCurrent,
+  openTodaySticky,
+  rememberStickyFocus,
+  runStickyHost,
+  setCurrentAlwaysOnTop,
+  showMainWindow,
+  trackGeometry,
+  type WindowGeometry,
+} from "../platform/desktop";
 import { NOTE_COLORS, createNote, hideNote } from "./actions";
 import { useTable, useToday } from "./hooks";
-import { NoteEditor } from "./notes";
+import { NoteEditor } from "./NoteEditor";
 import { QuickAdd, TaskItem } from "./tasks";
 import { TodayView } from "./TodayView";
 import { Toasts } from "./toast";
 
 export const TODAY_STICKY_GEOMETRY_KEY = "today_sticky_geom";
 export const TODAY_STICKY_OPEN_KEY = "today_sticky_open";
+export const TODAY_STICKY_PINNED_KEY = "today_sticky_pinned";
 export const DEFAULT_TODAY_STICKY: WindowGeometry = { x: null, y: null, width: 320, height: 420 };
 
 export async function showTodaySticky() {
   const saved = await getSetting(TODAY_STICKY_GEOMETRY_KEY);
   await setSetting(TODAY_STICKY_OPEN_KEY, "1");
-  await openTodaySticky(saved ? JSON.parse(saved) : DEFAULT_TODAY_STICKY);
+  const pinned = (await getSetting(TODAY_STICKY_PINNED_KEY)) !== "0";
+  await openTodaySticky(saved ? JSON.parse(saved) : DEFAULT_TODAY_STICKY, pinned);
 }
 
 export function BriefingWindow() {
@@ -52,11 +63,14 @@ export function TodayStickyWindow() {
   const lists = useTable("lists");
   const s = buildToday(tasks, events, today);
   const items = [...s.overdue, ...s.tasks];
+  const [pinned, setPinned] = useState(true);
 
   useEffect(() => {
-    let off = () => {};
-    trackGeometry((g) => setSetting(TODAY_STICKY_GEOMETRY_KEY, JSON.stringify(g))).then((f) => (off = f));
-    return () => off();
+    getSetting(TODAY_STICKY_PINNED_KEY).then((v) => setPinned(v !== "0"));
+    const offs: (() => void)[] = [];
+    trackGeometry((g) => setSetting(TODAY_STICKY_GEOMETRY_KEY, JSON.stringify(g))).then((f) => offs.push(f));
+    rememberStickyFocus().then((f) => offs.push(f));
+    return () => offs.forEach((f) => f());
   }, []);
 
   return (
@@ -67,6 +81,17 @@ export function TodayStickyWindow() {
         </span>
         <button className="icon-btn" title="메인 창 열기" onClick={() => showMainWindow("today")}>
           ↗
+        </button>
+        <button
+          className={`icon-btn ${pinned ? "on" : ""}`}
+          title={pinned ? "항상 위 해제" : "항상 위에 고정"}
+          onClick={async () => {
+            await setSetting(TODAY_STICKY_PINNED_KEY, pinned ? "0" : "1");
+            await setCurrentAlwaysOnTop(!pinned);
+            setPinned(!pinned);
+          }}
+        >
+          📌
         </button>
         <button
           className="icon-btn"
@@ -119,9 +144,10 @@ export function NoteWindow({ id }: { id: string }) {
   }, [loaded, note]);
 
   useEffect(() => {
-    let off = () => {};
-    trackGeometry((g) => updateRow("notes", id, { pos_x: g.x, pos_y: g.y, width: g.width, height: g.height })).then((f) => (off = f));
-    return () => off();
+    const offs: (() => void)[] = [];
+    trackGeometry((g) => updateRow("notes", id, { pos_x: g.x, pos_y: g.y, width: g.width, height: g.height })).then((f) => offs.push(f));
+    rememberStickyFocus().then((f) => offs.push(f));
+    return () => offs.forEach((f) => f());
   }, [id]);
 
   if (!note) return null;
@@ -169,8 +195,20 @@ export function NoteWindow({ id }: { id: string }) {
         </button>
       </div>
       <div className="sticky-body">
-        <NoteEditor note={note} autoEdit />
+        <NoteEditor note={note} autoFocus />
       </div>
     </div>
   );
+}
+
+// Invisible owner of all sticky windows (see ensureStickyHost).
+export function StickyHostWindow() {
+  useEffect(() => {
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
+    let off = () => {};
+    runStickyHost().then((f) => (off = f));
+    return () => off();
+  }, []);
+  return null;
 }

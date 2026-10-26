@@ -5,8 +5,10 @@ import { isTauri } from "../platform/env";
 import { BRIEFING_ENABLED_KEY, maybeShowBriefing } from "../background";
 import { showTodaySticky } from "./windows";
 
-function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return <button className={`toggle ${on ? "on" : ""}`} role="switch" aria-checked={on} disabled={disabled} onClick={() => onChange(!on)} />;
+function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button className={`toggle ${on ? "on" : ""}`} role="switch" aria-label={label} aria-checked={on} disabled={disabled} onClick={() => onChange(!on)} />
+  );
 }
 
 const shortcutLabel = (s: string) => s.replace("CommandOrControl", "Ctrl").replace(/\+/g, " + ");
@@ -32,6 +34,7 @@ export function SettingsView() {
           <div className="setting-desc">로그인하면 트레이에서 조용히 시작해요. 출근 브리핑을 받으려면 켜 두세요.</div>
         </div>
         <Toggle
+          label="자동 실행"
           on={autostart}
           disabled={!isTauri}
           onChange={async (v) => {
@@ -47,6 +50,7 @@ export function SettingsView() {
           <div className="setting-desc">하루에 처음 실행될 때(새벽 5시 이후) 오늘 일정과 할 일을 보여줘요.</div>
         </div>
         <Toggle
+          label="출근 브리핑"
           on={briefing}
           onChange={async (v) => {
             await setSetting(BRIEFING_ENABLED_KEY, v ? "1" : "0");

@@ -19,6 +19,10 @@ interface OpenOptions {
   alwaysOnTop?: boolean;
   skipTaskbar?: boolean;
   center?: boolean;
+  parent?: string; // owner window; on Windows owned windows share the owner's Alt+Tab entry
+  transparent?: boolean;
+  focus?: boolean;
+  minSize?: boolean; // apply the usual minimum size (default true)
 }
 
 // Windows being created, by label. Window creation is asynchronous, so two
@@ -44,7 +48,7 @@ async function openTauriWindow(o: OpenOptions): Promise<void> {
   if (existing) {
     await existing.show();
     await existing.unminimize();
-    await existing.setFocus();
+    if (o.focus !== false) await existing.setFocus();
     return;
   }
   const hasPos = o.geometry.x != null && o.geometry.y != null && !o.center;
@@ -53,14 +57,15 @@ async function openTauriWindow(o: OpenOptions): Promise<void> {
     title: o.title,
     width: o.geometry.width,
     height: o.geometry.height,
-    minWidth: 180,
-    minHeight: 120,
+    ...(o.minSize === false ? {} : { minWidth: 180, minHeight: 120 }),
     ...(hasPos ? { x: o.geometry.x!, y: o.geometry.y! } : { center: true }),
     decorations: !o.frameless,
     alwaysOnTop: o.alwaysOnTop ?? false,
     skipTaskbar: o.skipTaskbar ?? false,
-    resizable: true,
-    focus: true,
+    resizable: o.minSize !== false,
+    focus: o.focus !== false,
+    ...(o.parent ? { parent: o.parent } : {}),
+    ...(o.transparent ? { transparent: true, shadow: false } : {}),
   });
   await new Promise<void>((resolve) => {
     win.once("tauri://created", () => resolve());
@@ -71,16 +76,71 @@ async function openTauriWindow(o: OpenOptions): Promise<void> {
   });
 }
 
-export function openNoteWindow(id: string, geometry: WindowGeometry, pinned: boolean) {
+// ---- sticky group ---------------------------------------------------------
+// Sticky notes and the "today" sticky are owned by one invisible host window.
+// On Windows that makes the whole group a single Alt+Tab / taskbar entry, and
+// switching to it brings every sticky to the front together.
+
+export const STICKY_HOST = "sticky-host";
+const LAST_STICKY_KEY = "planner:last-sticky";
+
+export const isStickyLabel = (label: string) => label === "today-sticky" || label.startsWith("note-");
+
+export function ensureStickyHost() {
   return openWindow({
-    label: `note-${id}`,
-    route: `/note/${id}`,
-    title: "메모",
-    geometry,
+    label: STICKY_HOST,
+    route: "/sticky-host",
+    title: "Daily Planner 메모",
+    geometry: { x: 0, y: 0, width: 1, height: 1 },
     frameless: true,
-    alwaysOnTop: pinned,
-    skipTaskbar: true,
+    transparent: true,
+    focus: false,
+    minSize: false,
   });
+}
+
+async function openSticky(o: OpenOptions) {
+  if (isTauri) await ensureStickyHost();
+  return openWindow({ ...o, frameless: true, skipTaskbar: true, parent: STICKY_HOST });
+}
+
+export function openNoteWindow(id: string, geometry: WindowGeometry, pinned: boolean) {
+  return openSticky({ label: `note-${id}`, route: `/note/${id}`, title: "메모", geometry, alwaysOnTop: pinned });
+}
+
+// Called by each sticky so the host knows which one to focus when the group
+// is switched to.
+export async function rememberStickyFocus(): Promise<() => void> {
+  if (!isTauri) return () => {};
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const win = getCurrentWindow();
+  return win.onFocusChanged(({ payload: focused }) => {
+    if (focused) localStorage.setItem(LAST_STICKY_KEY, win.label);
+  });
+}
+
+// Runs inside the host window.
+export async function runStickyHost(): Promise<() => void> {
+  if (!isTauri) return () => {};
+  const { getCurrentWindow, getAllWindows } = await import("@tauri-apps/api/window");
+  const host = getCurrentWindow();
+  const stickies = async () => (await getAllWindows()).filter((w) => isStickyLabel(w.label));
+
+  // Switched to via Alt+Tab or the taskbar: hand focus to the last used sticky.
+  const off = await host.onFocusChanged(async ({ payload: focused }) => {
+    if (!focused) return;
+    const all = await stickies();
+    const target = all.find((w) => w.label === localStorage.getItem(LAST_STICKY_KEY)) ?? all[0];
+    await target?.setFocus();
+  });
+  // Leave the Alt+Tab list when no sticky is open.
+  const timer = setInterval(async () => {
+    if ((await stickies()).length === 0 && (await host.isVisible())) await host.hide();
+  }, 3000);
+  return () => {
+    off();
+    clearInterval(timer);
+  };
 }
 
 export async function closeWindow(label: string) {
@@ -100,16 +160,8 @@ export function openBriefing() {
   });
 }
 
-export function openTodaySticky(geometry: WindowGeometry) {
-  return openWindow({
-    label: "today-sticky",
-    route: "/today-sticky",
-    title: "오늘 할 일",
-    geometry,
-    frameless: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-  });
+export function openTodaySticky(geometry: WindowGeometry, pinned: boolean) {
+  return openSticky({ label: "today-sticky", route: "/today-sticky", title: "오늘 할 일", geometry, alwaysOnTop: pinned });
 }
 
 export async function showMainWindow(route?: string) {
