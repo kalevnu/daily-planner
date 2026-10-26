@@ -8,6 +8,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# A script error is recorded as a failed check and the run goes on, so one
+# broken step does not hide the results of the rest.
+trap { Check "스크립트 오류 없음" $false "$($_.InvocationInfo.ScriptLineNumber): $_"; continue }
+# Run in Korean time, as the user does; the briefing waits until 5 a.m. local.
+Set-TimeZone -Id "Korea Standard Time"
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
 
@@ -52,7 +57,17 @@ function Shot($name) {
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
   $bmp.Save((Join-Path $OutDir "$name.png"))
-  $g.Dispose(); $bmp.Dispose()
+  # A small JPEG copy goes into the log too, so the shots can be read where
+  # artifact downloads are not reachable.
+  $small = New-Object System.Drawing.Bitmap $bmp, ([int]($b.Width * 0.6)), ([int]($b.Height * 0.6))
+  $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object MimeType -eq "image/jpeg"
+  $params = New-Object System.Drawing.Imaging.EncoderParameters 1
+  $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 55L
+  $ms = New-Object System.IO.MemoryStream
+  $small.Save($ms, $codec, $params)
+  $b64 = [Convert]::ToBase64String($ms.ToArray())
+  for ($i = 0; $i -lt $b64.Length; $i += 4000) { Write-Host "SHOT $name $($b64.Substring($i, [Math]::Min(4000, $b64.Length - $i)))" }
+  $ms.Dispose(); $small.Dispose(); $g.Dispose(); $bmp.Dispose()
 }
 
 function Click([int] $x, [int] $y) {
@@ -87,6 +102,8 @@ function AppWindows {
   }
 }
 function Visible($title) { @(AppWindows | Where-Object { $_.Visible -and $_.Title -eq $title }) }
+# The first matching window, or $null (indexing an empty result throws).
+function First($title) { Visible $title | Select-Object -First 1 }
 # Approximation of the shell's Alt+Tab rule: visible, not a tool window, and
 # either unowned or explicitly marked as an app window.
 function AltTabEntries { @(AppWindows | Where-Object { $_.Visible -and -not $_.Tool -and ($_.Owner -eq [IntPtr]::Zero -or $_.AppWin) }) }
@@ -140,12 +157,16 @@ if (-not $script:Exe) { $results | Format-Table -AutoSize | Out-String | Write-H
 Start-App | Out-Null
 Shot "01-first-run"
 Check "메인 창이 보임" ((Visible "Daily Planner").Count -eq 1)
-Check "첫 실행에 브리핑 창이 뜸" ((Visible "오늘 브리핑").Count -eq 1)
+if ((Get-Date).Hour -ge 5) {
+  Check "첫 실행에 브리핑 창이 뜸" ((Visible "오늘 브리핑").Count -eq 1)
+} else {
+  Check "새벽 5시 전에는 브리핑이 안 뜸" ((Visible "오늘 브리핑").Count -eq 0) "local=$(Get-Date -Format HH:mm)"
+}
 $notes = Visible "메모"
 Check "환영 메모 창이 정확히 1개" ($notes.Count -eq 1) "count=$($notes.Count)"
 Check "DB: 메모 1개, 목록 2개" (((Sql "select count(*) from notes")[0][0] -eq 1) -and ((Sql "select count(*) from lists")[0][0] -eq 2))
 
-$briefing = (Visible "오늘 브리핑")[0]
+$briefing = (First "오늘 브리핑")
 if ($briefing) {
   $btn = Uia $briefing.Hwnd "오늘 시작하기"
   if ($btn) { ClickEl $btn }
@@ -212,7 +233,7 @@ Check "Alt+Tab 후 모든 메모가 메모장보다 앞에 있음" ($behind.Coun
 Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 
 # ---- close a note with its X button --------------------------------------------
-$n = (Visible "메모")[0]
+$n = (First "메모")
 Click ($n.R - 18) ($n.T + 18)
 Start-Sleep -Seconds 2
 Check "메모 X 버튼으로 창이 닫힘" ((Visible "메모").Count -eq 2) "count=$((Visible '메모').Count)"
@@ -220,33 +241,33 @@ Check "닫은 메모는 DB에 남고 열림 표시만 꺼짐" (((Sql "select cou
 
 # ---- today sticky and its pin ---------------------------------------------------
 Keys "^%t"; Start-Sleep -Seconds 3
-$briefing = (Visible "오늘 브리핑")[0]
+$briefing = (First "오늘 브리핑")
 Check "Ctrl+Alt+T로 브리핑 열림" ([bool]$briefing)
 if ($briefing) {
   $btn = Uia $briefing.Hwnd "*바탕화면에 띄우기*" -Like
   if ($btn) { ClickEl $btn }
   Start-Sleep -Seconds 3
 }
-$today = (Visible "오늘 할 일")[0]
+$today = (First "오늘 할 일")
 Check "오늘 할 일 스티커가 뜸" ([bool]$today)
 if ($today) {
   Check "오늘 할 일 스티커는 기본으로 항상 위" $today.Topmost
   Check "오늘 할 일 스티커도 묶음 창 소유" ($today.Owner -eq $hostWin.Hwnd)
   Click ($today.R - 48) ($today.T + 18)
   Start-Sleep -Seconds 1
-  $today = (Visible "오늘 할 일")[0]
+  $today = (First "오늘 할 일")
   Check "📌 누르면 항상 위 해제" (-not $today.Topmost)
   Check "고정 해제가 저장됨" ((Sql "select value from settings where id='today_sticky_pinned'")[0][0] -eq "0")
   Click ($today.R - 48) ($today.T + 18)
   Start-Sleep -Seconds 1
-  Check "📌 다시 누르면 항상 위" ((Visible "오늘 할 일")[0].Topmost)
+  Check "📌 다시 누르면 항상 위" ((First "오늘 할 일").Topmost)
 }
-$briefing = (Visible "오늘 브리핑")[0]
+$briefing = (First "오늘 브리핑")
 if ($briefing) { $btn = Uia $briefing.Hwnd "오늘 시작하기"; if ($btn) { ClickEl $btn } }
 Shot "06-today-sticky"
 
 # ---- quick add in the main window -----------------------------------------------
-$main = (Visible "Daily Planner")[0]
+$main = (First "Daily Planner")
 Click ($main.L + 60) ($main.T + 160) # sidebar, never under a sticky
 $input = Uia $main.Hwnd "*오늘 할 일 추가*" -Like
 Check "메인 창의 빠른 입력란 찾음" ([bool]$input)
@@ -267,7 +288,7 @@ $fired = (Sql "select value from settings where id='fired_reminders'")
 Check "알림이 발송됨 (발송 기록)" ($fired.Count -eq 1 -and $fired[0][0] -like "*task:*") ($fired | ConvertTo-Json -Compress)
 
 # ---- settings: autostart -----------------------------------------------------------
-$main = (Visible "Daily Planner")[0]
+$main = (First "Daily Planner")
 $nav = Uia $main.Hwnd "*설정"
 if (-not $nav) { $nav = Uia $main.Hwnd "*설정*" -Like }
 if ($nav) { ClickEl $nav }
@@ -281,7 +302,7 @@ Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$($en
 Shot "09-settings"
 
 # ---- closing the main window keeps the app in the tray ----------------------------
-$main = (Visible "Daily Planner")[0]
+$main = (First "Daily Planner")
 [W]::PostMessage($main.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null # WM_CLOSE
 Start-Sleep -Seconds 2
 Check "메인 창을 닫으면 숨겨지고 앱은 계속 실행" (((Visible "Daily Planner").Count -eq 0) -and (@(Get-Process | Where-Object { $_.Path -eq $script:Exe }).Count -gt 0))
