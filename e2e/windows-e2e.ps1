@@ -118,7 +118,17 @@ function Sql($query) {
   $rows = @(($out | ConvertFrom-Json).rows)
   return ,@($rows | ForEach-Object { ,@($_) })
 }
-function Cell($query) { (Sql $query)[0][0] }
+function Cell($query) { $r = Sql $query; if ($r.Count) { $r[0][0] } else { $null } }
+# A point inside a control's rectangle that no always-on-top sticky covers.
+function ClearPoint($rect) {
+  $covers = @(AppWindows | Where-Object { $_.Visible -and $_.Topmost })
+  $y = [int]($rect.Y + $rect.Height / 2)
+  for ($x = [int]($rect.X + 12); $x -lt $rect.X + $rect.Width - 12; $x += 20) {
+    $hit = $covers | Where-Object { $x -ge $_.L -and $x -le $_.R -and $y -ge $_.T -and $y -le $_.B }
+    if (-not $hit) { return @($x, $y) }
+  }
+  return @([int]($rect.X + $rect.Width / 2), $y)
+}
 
 # The WebView builds its accessibility tree lazily, so look a few times.
 function Uia($hwnd, $name, [switch] $Like) {
@@ -152,8 +162,15 @@ function ClickEl($el) {
 
 function Start-App {
   $p = Start-Process -FilePath $script:Exe -PassThru
-  Start-Sleep -Seconds 20
-  $script:AppPids = @(Get-Process | Where-Object { $_.Path -eq $script:Exe } | ForEach-Object { $_.Id })
+  # A fresh runner can take a while to bring WebView2 up: wait for the first
+  # sticky or briefing window (up to 90 s), then a little more to settle.
+  for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Seconds 1
+    $script:AppPids = @(Get-Process | Where-Object { $_.Path -eq $script:Exe } | ForEach-Object { $_.Id })
+    if ((Visible "메모").Count -gt 0 -or (Visible "오늘 브리핑").Count -gt 0) { break }
+  }
+  Write-Host "  app up after $($i + 1)s"
+  Start-Sleep -Seconds 5
   return $p
 }
 function Stop-App {
@@ -310,17 +327,19 @@ $main = (First "Daily Planner")
 Click ($main.L + 60) ($main.B - 60) # empty sidebar bottom, never under a sticky
 $input = Uia $main.Hwnd "*할 일 추가*" -Like
 Check "메인 창의 빠른 입력란 찾음" ([bool]$input)
-if ($input) { $input.SetFocus(); Start-Sleep -Milliseconds 300 }
+# Click a part of the input no sticky covers, so the keys land in it.
+function FocusInput { if ($input) { $pt = ClearPoint $input.Current.BoundingRectangle; Click $pt[0] $pt[1]; Start-Sleep -Milliseconds 500 } }
+function WaitRows($query) { $r = $null; for ($i = 0; $i -lt 10; $i++) { Start-Sleep -Seconds 1; $r = Sql $query; if ($r.Count) { return ,$r }; }; return ,@() }
+FocusInput
 $due = (Get-Date).AddMinutes(1)
 Keys ("{0:HH}:{0:mm} e2e alarm {{!}}1{{ENTER}}" -f $due)
-Start-Sleep -Seconds 2
-$task = Sql "select title, due_date, due_time, priority, remind_minutes from tasks where title='e2e alarm'"
+$task = WaitRows "select title, due_date, due_time, priority, remind_minutes from tasks where title='e2e alarm'"
 Check "빠른 입력으로 할 일 저장 (시간·우선순위·알림)" ($task.Count -eq 1 -and $task[0][2] -eq $due.ToString("HH:mm") -and $task[0][3] -eq 3 -and $task[0][4] -eq 0) ($task | ConvertTo-Json -Compress)
 # "M월 d일까지 ..." keeps the whole title and takes the date.
 $dl = (Get-Date).AddDays(5)
+FocusInput
 Keys ("{0}월 {1}일까지 e2e 마감 보고서{{ENTER}}" -f $dl.Month, $dl.Day)
-Start-Sleep -Seconds 2
-$t2 = Sql "select title, due_date from tasks where title like '%e2e 마감%'"
+$t2 = WaitRows "select title, due_date from tasks where title like '%e2e 마감%'"
 Check "'10월 31일까지 …' 식 입력에서 제목이 온전하고 날짜가 잡힘" ($t2.Count -eq 1 -and $t2[0][0] -eq "e2e 마감 보고서" -and $t2[0][1] -eq $dl.ToString("yyyy-MM-dd")) ($t2 | ConvertTo-Json -Compress)
 Shot "07-quick-add"
 
