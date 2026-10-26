@@ -1,11 +1,14 @@
-# Publishes a release when a version tag (v0.2.0 ...) is pushed: builds the
-# Windows installer, signs the update package and uploads both with the
-# latest.json the app's updater reads.
+# Publishes a release (on a version tag, or by hand from the Actions tab):
+# builds the Windows installer, signs the update package and uploads both
+# with the latest.json the app's updater reads. The tag comes from the
+# version in tauri.conf.json.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  # "Run workflow" on the Actions tab releases the version in tauri.conf.json.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,8 +34,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Daily Planner ${{ github.ref_name }}"
+          tagName: v__VERSION__
+          releaseName: "Daily Planner v__VERSION__"
           releaseBody: "설치 파일: Daily Planner_x.y.z_x64-setup.exe. 이미 설치되어 있다면 앱의 설정 > 업데이트에서 받을 수 있어요."
           releaseDraft: false
           prerelease: false
