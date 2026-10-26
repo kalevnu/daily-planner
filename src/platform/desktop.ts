@@ -21,11 +21,24 @@ interface OpenOptions {
   center?: boolean;
 }
 
-async function openWindow(o: OpenOptions): Promise<void> {
+// Windows being created, by label. Window creation is asynchronous, so two
+// quick calls for the same label (e.g. creating a note and restoring open
+// notes at startup) would otherwise both see "no window yet" and open twice.
+const opening = new Map<string, Promise<void>>();
+
+function openWindow(o: OpenOptions): Promise<void> {
   if (!isTauri) {
     window.open(`#${o.route}`, o.label, `width=${o.geometry.width},height=${o.geometry.height}`);
-    return;
+    return Promise.resolve();
   }
+  const pending = opening.get(o.label);
+  if (pending) return pending;
+  const p = openTauriWindow(o).finally(() => opening.delete(o.label));
+  opening.set(o.label, p);
+  return p;
+}
+
+async function openTauriWindow(o: OpenOptions): Promise<void> {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const existing = await WebviewWindow.getByLabel(o.label);
   if (existing) {
@@ -35,7 +48,7 @@ async function openWindow(o: OpenOptions): Promise<void> {
     return;
   }
   const hasPos = o.geometry.x != null && o.geometry.y != null && !o.center;
-  new WebviewWindow(o.label, {
+  const win = new WebviewWindow(o.label, {
     url: `index.html#${o.route}`,
     title: o.title,
     width: o.geometry.width,
@@ -48,6 +61,13 @@ async function openWindow(o: OpenOptions): Promise<void> {
     skipTaskbar: o.skipTaskbar ?? false,
     resizable: true,
     focus: true,
+  });
+  await new Promise<void>((resolve) => {
+    win.once("tauri://created", () => resolve());
+    win.once("tauri://error", (e) => {
+      console.warn(`창 열기 실패 ${o.label}`, e.payload);
+      resolve();
+    });
   });
 }
 

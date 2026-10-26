@@ -24,10 +24,11 @@ const WELCOME_NOTE = `환영해요! 이건 스티커 메모예요.
 
 async function firstRunSetup() {
   if (await getSetting("initialized")) return;
+  // Mark first, so a reload during setup cannot create the defaults twice.
+  await setSetting("initialized", new Date().toISOString());
   await createRow("lists", { name: "업무", color: LIST_COLORS[0], sort_order: 0 });
   await createRow("lists", { name: "개인", color: LIST_COLORS[1], sort_order: 1 });
   await createNote(WELCOME_NOTE, isTauri);
-  await setSetting("initialized", new Date().toISOString());
 }
 
 async function restoreWindows() {
@@ -61,7 +62,11 @@ async function checkReminders() {
   await setSetting(FIRED_KEY, JSON.stringify(fired));
 }
 
+let started = false;
+
 export async function startBackground() {
+  if (started) return;
+  started = true;
   await firstRunSetup();
 
   // Reminders work in the browser preview too.
