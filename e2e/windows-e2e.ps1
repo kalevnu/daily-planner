@@ -80,6 +80,8 @@ function Click([int] $x, [int] $y) {
 }
 
 function Keys($text) { [System.Windows.Forms.SendKeys]::SendWait($text); Start-Sleep -Milliseconds 300 }
+# SendKeys cannot type Korean on the runner's English layout; paste it instead.
+function Paste($text) { Set-Clipboard -Value $text; Start-Sleep -Milliseconds 200; Keys "^v" }
 
 $AppPids = @()
 function AppWindows {
@@ -338,7 +340,8 @@ Check "빠른 입력으로 할 일 저장 (시간·우선순위·알림)" ($task
 # "M월 d일까지 ..." keeps the whole title and takes the date.
 $dl = (Get-Date).AddDays(5)
 FocusInput
-Keys ("{0}월 {1}일까지 e2e 마감 보고서{{ENTER}}" -f $dl.Month, $dl.Day)
+Paste ("{0}월 {1}일까지 e2e 마감 보고서" -f $dl.Month, $dl.Day)
+Keys "{ENTER}"
 $t2 = WaitRows "select title, due_date from tasks where title like '%e2e 마감%'"
 Check "'10월 31일까지 …' 식 입력에서 제목이 온전하고 날짜가 잡힘" ($t2.Count -eq 1 -and $t2[0][0] -eq "e2e 마감 보고서" -and $t2[0][1] -eq $dl.ToString("yyyy-MM-dd")) ($t2 | ConvertTo-Json -Compress)
 Shot "07-quick-add"
@@ -352,12 +355,16 @@ if ($today) {
   Start-Sleep -Seconds 1
   Check "스티커에서 항목을 누르면 그 자리에서 편집 화면" ([bool](Uia $today.Hwnd "우선순위"))
   Shot "07a-sticky-edit"
-  $x = @(Uia $today.Hwnd "닫기")
-  # The editor's own 닫기 sits below the bar's; press whichever is lower.
-  $all = [System.Windows.Automation.AutomationElement]::FromHandle($today.Hwnd).FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -eq "닫기" } | Sort-Object { $_.Current.BoundingRectangle.Y }
-  if ($all.Count -ge 2) { ClickEl $all[-1] }
+  # The editor's own 닫기 sits below the sticky bar's; press that one.
+  $closes = @([System.Windows.Automation.AutomationElement]::FromHandle($today.Hwnd).FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -eq "닫기" })
+  $closes | ForEach-Object { Write-Host ("  닫기 at y={0} x={1}" -f $_.Current.BoundingRectangle.Y, $_.Current.BoundingRectangle.X) }
+  $editorClose = $closes | Where-Object { $_.Current.BoundingRectangle.Y -gt $today.T + 30 } | Select-Object -First 1
+  if ($editorClose) {
+    $r = $editorClose.Current.BoundingRectangle
+    Click ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2))
+  }
   Start-Sleep -Seconds 1
-  Check "편집 닫으면 목록으로 돌아옴" (-not (Uia $today.Hwnd "우선순위"))
+  Check "편집 닫으면 목록으로 돌아옴" (-not (Uia $today.Hwnd "우선순위")) "close buttons=$($closes.Count)"
 }
 
 # ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
