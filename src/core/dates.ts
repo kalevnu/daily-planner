@@ -70,3 +70,15 @@ export function relativeDayKo(dateStr: string, today: string): string {
   }
   return formatDateKo(dateStr);
 }
+
+// Short due label for a narrow column: "오늘", "내일", "수 10/28", "11/2 (월)".
+export function shortDueKo(dateStr: string, today: string): string {
+  const diff = diffDays(today, dateStr);
+  if (diff === 0) return "오늘";
+  if (diff === 1) return "내일";
+  if (diff === -1) return "어제";
+  if (diff < 0) return `${-diff}일 지남`;
+  const d = parseLocal(dateStr);
+  const md = `${d.getMonth() + 1}/${d.getDate()}`;
+  return diff < 7 ? `${weekdayKo(dateStr)} ${md}` : `${md} (${weekdayKo(dateStr)})`;
+}

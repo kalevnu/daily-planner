@@ -369,6 +369,39 @@ if ($today) {
   Check "편집 닫으면 목록으로 돌아옴" (-not (Uia $today.Hwnd "우선순위")) "close buttons=$($closes.Count)"
 }
 
+# ---- list sticky: one list on the desktop, deadlines in a column on the right ----
+# Click a control at a spot no sticky covers (UIA Invoke is not offered for text).
+function ClickClear($el) { $pt = ClearPoint $el.Current.BoundingRectangle; Click $pt[0] $pt[1]; Start-Sleep -Milliseconds 500 }
+$main = (First "Daily Planner")
+$nav = Uia $main.Hwnd "업무" # the sidebar entry comes first in the tree
+Check "사이드바에 '업무' 목록" ([bool]$nav)
+if ($nav) { ClickClear $nav }
+$btn = Uia $main.Hwnd "*바탕화면에 띄우기*" -Like
+Check "목록 화면에 '바탕화면에 띄우기' 버튼" ([bool]$btn)
+if ($btn) { ClickEl $btn }
+Start-Sleep -Seconds 3
+$ls = (First "업무")
+Check "업무 스티커가 뜸" ([bool]$ls)
+if ($ls) {
+  Check "업무 스티커는 항상 위, 묶음 창 소유" ($ls.Topmost -and ($ls.Owner -eq $hostWin.Hwnd))
+  DumpWindows "list sticky"
+  $inp = Uia $ls.Hwnd "*업무 추가*" -Like
+  Check "스티커 아래 '업무 추가' 입력란" ([bool]$inp)
+  if ($inp) { $r = $inp.Current.BoundingRectangle; Click ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2)); Start-Sleep -Milliseconds 500 }
+  Paste "내일 e2e 목록 할 일"
+  Keys "{ENTER}"
+  $t3 = WaitRows "select t.title, t.due_date, l.name from tasks t join lists l on l.id = t.list_id where t.title = 'e2e 목록 할 일'"
+  Check "스티커에서 추가한 할 일이 업무 목록에 내일 마감으로 저장" ($t3.Count -eq 1 -and $t3[0][1] -eq (Get-Date).AddDays(1).ToString("yyyy-MM-dd") -and $t3[0][2] -eq "업무") ($t3 | ConvertTo-Json -Compress)
+  Check "마감일이 스티커 오른쪽 열에 '내일'로 표시" ([bool](Uia $ls.Hwnd "내일"))
+  Shot "07c-list-sticky"
+  $flagQuery = "select value from settings where id = 'list_sticky:' || (select id from lists where name = '업무')"
+  Check "업무 스티커 열림 상태가 저장됨" ("$(Cell $flagQuery)" -like '*"open":true*') "$(Cell $flagQuery)"
+  $x = Uia $ls.Hwnd "닫기"
+  if ($x) { ClickEl $x }
+  Start-Sleep -Seconds 2
+  Check "✕로 닫으면 창이 사라지고 열림 표시가 꺼짐" ((-not (First "업무")) -and ("$(Cell $flagQuery)" -like '*"open":false*')) "$(Cell $flagQuery)"
+}
+
 # ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
 $nav = Uia $main.Hwnd "*캘린더*" -Like
 if ($nav) { ClickEl $nav }

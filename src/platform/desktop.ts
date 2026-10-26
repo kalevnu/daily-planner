@@ -84,7 +84,7 @@ async function openTauriWindow(o: OpenOptions): Promise<void> {
 export const STICKY_HOST = "sticky-host";
 const LAST_STICKY_KEY = "planner:last-sticky";
 
-export const isStickyLabel = (label: string) => label === "today-sticky" || label.startsWith("note-");
+export const isStickyLabel = (label: string) => label === "today-sticky" || label.startsWith("note-") || label.startsWith("list-");
 
 export function ensureStickyHost() {
   return openWindow({
@@ -162,6 +162,11 @@ export function openBriefing() {
 
 export function openTodaySticky(geometry: WindowGeometry, pinned: boolean) {
   return openSticky({ label: "today-sticky", route: "/today-sticky", title: "오늘 할 일", geometry, alwaysOnTop: pinned });
+}
+
+// One list's open tasks as a sticky. `id` is the list id, or "none" for tasks without a list.
+export function openListSticky(id: string, title: string, geometry: WindowGeometry, pinned: boolean) {
+  return openSticky({ label: `list-${id}`, route: `/list-sticky/${id}`, title, geometry, alwaysOnTop: pinned });
 }
 
 export async function showMainWindow(route?: string) {

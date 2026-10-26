@@ -3,6 +3,7 @@ import { addDays, formatDateKo, relativeDayKo } from "../core/dates";
 import { compareTasks } from "../core/today";
 import { useTable, useToday } from "./hooks";
 import { EmptyLine, QuickAdd, Section, TaskItem } from "./tasks";
+import { showListSticky } from "./windows";
 
 interface Props {
   onOpenTask: (t: Task) => void;
@@ -75,7 +76,12 @@ export function ListView({ listId, onOpenTask, selectedTaskId }: Props & { listI
           {list && <i className="list-swatch" style={{ background: list.color }} />}
           {list?.name ?? "목록 없음"}
         </h1>
-        <p className="summary">할 일 {todo.length}개</p>
+        <p className="summary">
+          할 일 {todo.length}개
+          <button className="chip" title="이 목록을 바탕화면 스티커로 띄우기" onClick={() => showListSticky(listId)}>
+            📌 바탕화면에 띄우기
+          </button>
+        </p>
       </header>
       <QuickAdd defaults={{ list_id: listId }} autoFocus />
       <div className="task-list">

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Task, TaskList } from "../core/types";
-import { formatTimeKo, relativeDayKo } from "../core/dates";
+import { formatTimeKo, relativeDayKo, shortDueKo } from "../core/dates";
 import { describeRule } from "../core/recurrence";
 import { parseQuickAdd } from "../core/quickParse";
 import { addTask, moveTaskTo, moveToTomorrow, toggleTask } from "./actions";
@@ -36,23 +36,24 @@ interface TaskItemProps {
   selected?: boolean;
   showOverdueActions?: boolean;
   compact?: boolean;
+  dueRight?: boolean; // deadline in its own column on the right instead of under the title
 }
 
-export function TaskItem({ task, lists, onOpen, selected, showOverdueActions, compact }: TaskItemProps) {
+export function TaskItem({ task, lists, onOpen, selected, showOverdueActions, compact, dueRight }: TaskItemProps) {
   const today = useToday();
   const list = lists.find((l) => l.id === task.list_id);
   const done = task.status === "done";
   const overdue = !done && task.due_date != null && task.due_date < today;
 
   const meta: React.ReactNode[] = [];
-  if (task.due_date && !compact) {
+  if (task.due_date && !compact && !dueRight) {
     meta.push(
       <span key="due" className={overdue ? "meta-overdue" : ""}>
         {relativeDayKo(task.due_date, today)}
       </span>,
     );
   }
-  if (task.due_time) meta.push(<span key="time">{formatTimeKo(task.due_time)}</span>);
+  if (task.due_time && !dueRight) meta.push(<span key="time">{formatTimeKo(task.due_time)}</span>);
   if (task.rrule) meta.push(<span key="rep">↻ {describeRule(task.rrule)}</span>);
   if (list && !compact) {
     meta.push(
@@ -76,6 +77,12 @@ export function TaskItem({ task, lists, onOpen, selected, showOverdueActions, co
         </div>
         {meta.length > 0 && <div className="task-meta">{meta}</div>}
       </div>
+      {dueRight && task.due_date && (
+        <div className={`task-due ${overdue ? "due-overdue" : task.due_date === today ? "due-today" : ""}`}>
+          <span>{shortDueKo(task.due_date, today)}</span>
+          {task.due_time && <span className="task-due-time">{formatTimeKo(task.due_time)}</span>}
+        </div>
+      )}
       {showOverdueActions && !done && (
         <div className="task-actions">
           <button className="chip" onClick={(e) => (e.stopPropagation(), moveTaskTo(task, today))}>
