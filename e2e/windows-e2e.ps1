@@ -112,10 +112,12 @@ function First($title) { Visible $title | Select-Object -First 1 }
 function AltTabEntries { @(AppWindows | Where-Object { $_.Visible -and -not $_.Tool -and ($_.Owner -eq [IntPtr]::Zero -or $_.AppWin) }) }
 
 $DbPath = Join-Path $env:APPDATA "com.kalevnu.dailyplanner\planner.db"
+$env:PYTHONIOENCODING = "utf-8"
 # Rows as an array of arrays, even for one row or one column (PowerShell
 # likes to unwrap those).
 function Sql($query) {
-  $py = "import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps({'rows': c.execute(sys.argv[2]).fetchall()}, ensure_ascii=False))"
+  # ASCII-escaped JSON, so Korean survives the runner's console code page.
+  $py = "import sqlite3,json,sys; c=sqlite3.connect(sys.argv[1]); print(json.dumps({'rows': c.execute(sys.argv[2]).fetchall()}))"
   $out = python -c $py $DbPath $query
   $rows = @(($out | ConvertFrom-Json).rows)
   return ,@($rows | ForEach-Object { ,@($_) })
