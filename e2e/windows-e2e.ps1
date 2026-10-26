@@ -115,14 +115,23 @@ function Sql($query) {
   return ,($out | ConvertFrom-Json)
 }
 
+# The WebView builds its accessibility tree lazily, so look a few times.
 function Uia($hwnd, $name, [switch] $Like) {
-  $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
-  $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-  foreach ($el in $all) {
-    $n = $el.Current.Name
-    if (($Like -and $n -like $name) -or (-not $Like -and $n -eq $name)) { return $el }
+  for ($try = 0; $try -lt 8; $try++) {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($el in $all) {
+      $n = $el.Current.Name
+      if (($Like -and $n -like $name) -or (-not $Like -and $n -eq $name)) { return $el }
+    }
+    Start-Sleep -Milliseconds 750
   }
   return $null
+}
+# Window list for the log: title, z-order, topmost and owner.
+function DumpWindows($label) {
+  Write-Host "--- windows: $label"
+  AppWindows | Where-Object Visible | ForEach-Object { Write-Host ("  z={0} '{1}' topmost={2} owner={3} hwnd={4} [{5},{6},{7},{8}]" -f $_.Z, $_.Title, $_.Topmost, $_.Owner, $_.Hwnd, $_.L, $_.T, $_.R, $_.B) }
 }
 # Press a control through UI Automation (works even if another window covers
 # it); fall back to a real mouse click.
@@ -170,8 +179,8 @@ $briefing = (First "오늘 브리핑")
 if ($briefing) {
   $btn = Uia $briefing.Hwnd "오늘 시작하기"
   if ($btn) { ClickEl $btn }
-  Start-Sleep -Seconds 1
-  Check "브리핑 '오늘 시작하기'로 닫힘" ((Visible "오늘 브리핑").Count -eq 0)
+  Start-Sleep -Seconds 2
+  Check "브리핑 '오늘 시작하기'로 닫힘" ((Visible "오늘 브리핑").Count -eq 0) "button found=$([bool]$btn)"
 }
 
 # ---- restart: nothing duplicated --------------------------------------------
@@ -192,8 +201,11 @@ Check "새 메모가 겹치지 않고 비켜서 열림" ($positions.Count -eq $n
 
 # ---- Notion-style editing in the newest note ---------------------------------
 Keys "# Test{ENTER}{[}{]} milk{ENTER}eggs{ENTER}{ENTER}**bold** text"
-Start-Sleep -Seconds 2
-$content = (Sql "select content from notes order by created_at desc limit 1")[0][0]
+for ($i = 0; $i -lt 10; $i++) {
+  Start-Sleep -Seconds 1
+  $content = (Sql "select content from notes order by created_at desc limit 1")[0][0]
+  if ($content -like "*bold*") { break }
+}
 Check "마크다운 입력이 서식으로 저장됨" ($content -eq "# Test`n`n- [ ] milk`n- [ ] eggs`n`n**bold** text") ($content -replace "`n", "\n")
 Shot "03-markdown"
 
@@ -253,14 +265,23 @@ Check "오늘 할 일 스티커가 뜸" ([bool]$today)
 if ($today) {
   Check "오늘 할 일 스티커는 기본으로 항상 위" $today.Topmost
   Check "오늘 할 일 스티커도 묶음 창 소유" ($today.Owner -eq $hostWin.Hwnd)
-  Click ($today.R - 48) ($today.T + 18)
+  DumpWindows "before unpin"
+  $pin = Uia $today.Hwnd "항상 위 해제"
+  Check "📌 버튼 찾음" ([bool]$pin)
+  if ($pin) { ClickEl $pin }
   Start-Sleep -Seconds 1
+  DumpWindows "after unpin"
   $today = (First "오늘 할 일")
   Check "📌 누르면 항상 위 해제" (-not $today.Topmost)
   Check "고정 해제가 저장됨" ((Sql "select value from settings where id='today_sticky_pinned'")[0][0] -eq "0")
-  Click ($today.R - 48) ($today.T + 18)
+  $stillOnTop = @(Visible "메모" | Where-Object Topmost)
+  Check "오늘 할 일만 해제되고 고정된 메모는 그대로 항상 위" ($stillOnTop.Count -eq (Visible "메모").Count) "topmost notes=$($stillOnTop.Count)/$((Visible '메모').Count)"
+  $pin = Uia $today.Hwnd "항상 위에 고정"
+  if ($pin) { ClickEl $pin }
   Start-Sleep -Seconds 1
+  DumpWindows "after re-pin"
   Check "📌 다시 누르면 항상 위" ((First "오늘 할 일").Topmost)
+  Check "다시 고정이 저장됨" ((Sql "select value from settings where id='today_sticky_pinned'")[0][0] -eq "1")
 }
 $briefing = (First "오늘 브리핑")
 if ($briefing) { $btn = Uia $briefing.Hwnd "오늘 시작하기"; if ($btn) { ClickEl $btn } }
@@ -268,8 +289,8 @@ Shot "06-today-sticky"
 
 # ---- quick add in the main window -----------------------------------------------
 $main = (First "Daily Planner")
-Click ($main.L + 60) ($main.T + 160) # sidebar, never under a sticky
-$input = Uia $main.Hwnd "*오늘 할 일 추가*" -Like
+Click ($main.L + 60) ($main.B - 60) # empty sidebar bottom, never under a sticky
+$input = Uia $main.Hwnd "*할 일 추가*" -Like
 Check "메인 창의 빠른 입력란 찾음" ([bool]$input)
 if ($input) { $input.SetFocus(); Start-Sleep -Milliseconds 300 }
 $due = (Get-Date).AddMinutes(1)
@@ -297,6 +318,8 @@ $toggle = Uia $main.Hwnd "자동 실행"
 if ($toggle) { ClickEl $toggle }
 Start-Sleep -Seconds 2
 $run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -ErrorAction SilentlyContinue
+$run.PSObject.Properties | Where-Object Name -notlike "PS*" | ForEach-Object { Write-Host "  Run: $($_.Name) = $($_.Value)" }
+Write-Host "  toggle found=$([bool]$toggle) checked=$(if ($toggle) { try { $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState } catch { 'n/a' } })"
 $entry = $run.PSObject.Properties | Where-Object { "$($_.Value)" -like "*daily-planner*" }
 Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$($entry.Value)"
 Shot "09-settings"

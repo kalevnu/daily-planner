@@ -9,6 +9,9 @@ type Row = Record<string, unknown>;
 interface Backend {
   all(table: TableName): Promise<Row[]>;
   put(table: TableName, row: Row): Promise<void>;
+  // Changes only the given columns, so two windows saving different fields of
+  // the same row (a note's text and its position) never undo each other.
+  patch(table: TableName, id: string, fields: Row): Promise<void>;
 }
 
 class SqliteBackend implements Backend {
@@ -44,6 +47,14 @@ class SqliteBackend implements Backend {
       cols.map((c) => row[c] ?? null),
     );
   }
+
+  async patch(table: TableName, id: string, fields: Row): Promise<void> {
+    const db = await this.db;
+    const cols = columnsOf(table).filter((c) => c !== "id" && c in fields);
+    if (!cols.length) return;
+    const sets = cols.map((c, i) => `"${c}" = $${i + 1}`);
+    await db.execute(`UPDATE ${table} SET ${sets.join(", ")} WHERE id = $${cols.length + 1}`, [...cols.map((c) => fields[c] ?? null), id]);
+  }
 }
 
 class LocalBackend implements Backend {
@@ -62,6 +73,14 @@ class LocalBackend implements Backend {
     const i = rows.findIndex((r) => r.id === row.id);
     if (i >= 0) rows[i] = row;
     else rows.push(row);
+    localStorage.setItem(this.key(table), JSON.stringify(rows));
+  }
+
+  async patch(table: TableName, id: string, fields: Row): Promise<void> {
+    const rows = await this.all(table);
+    const i = rows.findIndex((r) => r.id === id);
+    if (i < 0) return;
+    rows[i] = { ...rows[i], ...fields, id };
     localStorage.setItem(this.key(table), JSON.stringify(rows));
   }
 }
@@ -124,10 +143,7 @@ export async function createRow<T extends TableName>(table: T, fields: NewRow<T>
 }
 
 export async function updateRow<T extends TableName>(table: T, id: string, patch: Partial<Tables[T]>): Promise<void> {
-  const rows = await backend.all(table);
-  const current = rows.find((r) => r.id === id);
-  if (!current) return;
-  await backend.put(table, { ...current, ...patch, id, updated_at: nowIso() });
+  await backend.patch(table, id, { ...patch, updated_at: nowIso() });
   notify(table);
 }
 

@@ -85,6 +85,7 @@ export function TodayStickyWindow() {
         <button
           className={`icon-btn ${pinned ? "on" : ""}`}
           title={pinned ? "항상 위 해제" : "항상 위에 고정"}
+          aria-label={pinned ? "항상 위 해제" : "항상 위에 고정"}
           onClick={async () => {
             await setSetting(TODAY_STICKY_PINNED_KEY, pinned ? "0" : "1");
             await setCurrentAlwaysOnTop(!pinned);
@@ -183,6 +184,7 @@ export function NoteWindow({ id }: { id: string }) {
         <button
           className={`icon-btn ${pinned ? "on" : ""}`}
           title={pinned ? "항상 위 해제" : "항상 위에 고정"}
+          aria-label={pinned ? "항상 위 해제" : "항상 위에 고정"}
           onClick={async () => {
             await updateRow("notes", id, { is_pinned: pinned ? 0 : 1 });
             await setCurrentAlwaysOnTop(!pinned);
