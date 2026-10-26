@@ -64,6 +64,9 @@ export function relativeDayKo(dateStr: string, today: string): string {
   if (diff === 1) return "내일";
   if (diff === -1) return "어제";
   if (diff < 0) return `${-diff}일 지남`;
-  if (diff < 7) return `${weekdayKo(dateStr)}요일`;
+  if (diff < 7) {
+    const d = parseLocal(dateStr);
+    return `${weekdayKo(dateStr)}요일 (${d.getMonth() + 1}/${d.getDate()})`;
+  }
   return formatDateKo(dateStr);
 }

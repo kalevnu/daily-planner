@@ -73,6 +73,26 @@ describe("parseQuickAdd", () => {
     expect(parseQuickAdd("1/5 신년회", TODAY).due_date).toBe("2027-01-05");
   });
 
+  it("takes a glued particle with the date or time", () => {
+    expect(parseQuickAdd("10월 31일까지 생성형 AI 계정활용 현황 작성", TODAY)).toMatchObject({
+      title: "생성형 AI 계정활용 현황 작성",
+      due_date: "2026-10-31",
+    });
+    expect(parseQuickAdd("10월 31일 까지 생성형 AI 계정활용 현황 작성", TODAY).title).toBe("생성형 AI 계정활용 현황 작성");
+    expect(parseQuickAdd("내일까지 보고서", TODAY)).toMatchObject({ title: "보고서", due_date: "2026-10-26" });
+    expect(parseQuickAdd("3시에 회의", TODAY)).toMatchObject({ title: "회의", due_time: "15:00" });
+    expect(parseQuickAdd("보고서 금요일부터 작성", TODAY)).toMatchObject({ title: "보고서 작성", due_date: "2026-10-30" });
+  });
+
+  it("parses 오전/오후 with HH:MM and 금주", () => {
+    expect(parseQuickAdd("금주 일요일 오전 12:59분까지 로봇공학논문연구 Mid-presentation", "2026-10-26")).toMatchObject({
+      title: "로봇공학논문연구 Mid-presentation",
+      due_date: "2026-11-01",
+      due_time: "00:59",
+    });
+    expect(parseQuickAdd("오후 1:30 회의", TODAY).due_time).toBe("13:30");
+  });
+
   it("keeps unknown list tags and plain text", () => {
     expect(parseQuickAdd("우유 사기 #장보기", TODAY)).toMatchObject({ title: "우유 사기 #장보기", due_date: null, list_id: null });
   });

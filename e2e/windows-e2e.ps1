@@ -316,6 +316,12 @@ Keys ("{0:HH}:{0:mm} e2e alarm {{!}}1{{ENTER}}" -f $due)
 Start-Sleep -Seconds 2
 $task = Sql "select title, due_date, due_time, priority, remind_minutes from tasks where title='e2e alarm'"
 Check "빠른 입력으로 할 일 저장 (시간·우선순위·알림)" ($task.Count -eq 1 -and $task[0][2] -eq $due.ToString("HH:mm") -and $task[0][3] -eq 3 -and $task[0][4] -eq 0) ($task | ConvertTo-Json -Compress)
+# "M월 d일까지 ..." keeps the whole title and takes the date.
+$dl = (Get-Date).AddDays(5)
+Keys ("{0}월 {1}일까지 e2e 마감 보고서{{ENTER}}" -f $dl.Month, $dl.Day)
+Start-Sleep -Seconds 2
+$t2 = Sql "select title, due_date from tasks where title like '%e2e 마감%'"
+Check "'10월 31일까지 …' 식 입력에서 제목이 온전하고 날짜가 잡힘" ($t2.Count -eq 1 -and $t2[0][0] -eq "e2e 마감 보고서" -and $t2[0][1] -eq $dl.ToString("yyyy-MM-dd")) ($t2 | ConvertTo-Json -Compress)
 Shot "07-quick-add"
 
 # ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
