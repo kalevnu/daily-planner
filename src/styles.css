@@ -378,6 +378,10 @@ textarea {
   margin: 4px 0 0;
   color: var(--text-2);
 }
+.summary .chip {
+  margin-left: 10px;
+  vertical-align: 1px;
+}
 .list-swatch {
   width: 14px;
   height: 14px;
@@ -496,6 +500,41 @@ textarea {
   display: flex;
   gap: 6px;
   align-self: center;
+}
+/* Deadline column on the right (list stickies). */
+.task-due {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  line-height: 1.25;
+  color: var(--text-3);
+  margin-top: 2px;
+  min-width: 52px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sticky .task-due {
+  color: inherit;
+  opacity: 0.65;
+}
+.task-due-time {
+  font-size: 11px;
+}
+.task-due.due-today {
+  color: var(--accent);
+  opacity: 1;
+  font-weight: 600;
+}
+.task-due.due-overdue {
+  color: var(--danger);
+  opacity: 1;
+  font-weight: 600;
+}
+.task.done .task-due {
+  text-decoration: line-through;
+  opacity: 0.4;
 }
 .flag {
   width: 8px;
@@ -1232,8 +1271,35 @@ textarea {
   display: flex;
   flex-direction: column;
 }
-.sticky-today .sticky-body {
+.sticky-today .sticky-body,
+.sticky-list .sticky-body {
   padding: 2px 8px;
+}
+/* A list sticky is tinted with the list's own colour. */
+.sticky-list {
+  background: color-mix(in srgb, var(--list-color) 14%, #fffdf7);
+}
+.sticky-list .sticky-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sticky-list .list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.sticky-count {
+  font-weight: 500;
+  opacity: 0.7;
+}
+.sticky-list .check {
+  --check-color: color-mix(in srgb, var(--list-color) 70%, #555);
+}
+.sticky-list .check.checked {
+  background: var(--list-color);
+  border-color: var(--list-color);
 }
 .sticky .quick-add {
   margin: 6px 8px 8px;
@@ -1282,6 +1348,12 @@ textarea {
 }
 
 @media (prefers-color-scheme: dark) {
+  .sticky-list {
+    background: color-mix(in srgb, var(--list-color) 22%, #26282c);
+  }
+  .sticky-list .check {
+    --check-color: color-mix(in srgb, var(--list-color) 70%, #ddd);
+  }
   .sticky .quick-add,
   .note-card .chip {
     background: rgba(255, 255, 255, 0.08);

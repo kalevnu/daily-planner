@@ -27,11 +27,19 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: npm ci
+      - run: pip install cryptography
+      # The updater only installs builds signed with this key, so prove the
+      # secret is that key (and clean it up) before spending a build on it.
+      - name: Check signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: scripts/check-signing-key.sh
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The updater only installs builds signed with this key.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY comes from the check above via GITHUB_ENV.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: v__VERSION__
@@ -40,3 +48,10 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+      # The installer the release ships must verify with the app's own pubkey.
+      - name: Verify release signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe)
+          python3 scripts/verify-signature.py "$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")" "$exe" "$exe.sig"

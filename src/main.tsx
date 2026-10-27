@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./ui/App";
-import { BriefingWindow, NoteWindow, StickyHostWindow, TodayStickyWindow } from "./ui/windows";
+import { BriefingWindow, ListStickyWindow, NoteWindow, StickyHostWindow, TodayStickyWindow } from "./ui/windows";
 import { startBackground } from "./background";
 import "pretendard/dist/web/static/pretendard.css";
 import "./styles.css";
@@ -9,6 +9,7 @@ import "./styles.css";
 // Every window loads this same page; the hash decides what it shows.
 //   #/briefing       morning briefing
 //   #/today-sticky   today's tasks as a sticky
+//   #/list-sticky/<id>  one list's tasks as a sticky ("none" = tasks without a list)
 //   #/note/<id>      one sticky note
 //   #/sticky-host    invisible owner that groups the stickies for Alt+Tab
 //   (anything else)  the main window, which also runs the background jobs
@@ -18,6 +19,7 @@ function Root() {
   if (hash === "/today-sticky") return <TodayStickyWindow />;
   if (hash === "/sticky-host") return <StickyHostWindow />;
   if (hash.startsWith("/note/")) return <NoteWindow id={hash.slice(6)} />;
+  if (hash.startsWith("/list-sticky/")) return <ListStickyWindow listId={hash.slice(13)} />;
   return <App />;
 }
 

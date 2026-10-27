@@ -369,6 +369,53 @@ if ($today) {
   Check "편집 닫으면 목록으로 돌아옴" (-not (Uia $today.Hwnd "우선순위")) "close buttons=$($closes.Count)"
 }
 
+# ---- list sticky: one list on the desktop, deadlines in a column on the right ----
+# Click a control at a spot no sticky covers (UIA Invoke is not offered for text).
+function ClickClear($el) { $pt = ClearPoint $el.Current.BoundingRectangle; Click $pt[0] $pt[1]; Start-Sleep -Milliseconds 500 }
+# What UI Automation sees in a window, for the log.
+function UiaDump($hwnd, $label) {
+  try {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $names = @($all | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25)
+    Write-Host ("--- uia {0}: {1} elements; names: {2}" -f $label, $all.Count, ($names -join " | "))
+  } catch { Write-Host "--- uia ${label}: $_" }
+}
+$main = (First "Daily Planner")
+$nav = Uia $main.Hwnd "업무" # the sidebar entry comes first in the tree
+Check "사이드바에 '업무' 목록" ([bool]$nav)
+if ($nav) { ClickClear $nav }
+$btn = Uia $main.Hwnd "*바탕화면에 띄우기*" -Like
+Check "목록 화면에 '바탕화면에 띄우기' 버튼" ([bool]$btn)
+if ($btn) { ClickEl $btn }
+Start-Sleep -Seconds 4
+$ls = (First "업무")
+Check "업무 스티커가 뜸" ([bool]$ls)
+if ($ls) {
+  Check "업무 스티커는 항상 위, 묶음 창 소유" ($ls.Topmost -and ($ls.Owner -eq $hostWin.Hwnd))
+  DumpWindows "list sticky"
+  UiaDump $ls.Hwnd "list sticky, fresh"
+  Click ($ls.L + 60) ($ls.T + 12) # its title bar: the window is active from here on
+  Start-Sleep -Seconds 1
+  UiaDump $ls.Hwnd "list sticky, after click"
+  # The quick-add input sits along the bottom edge of the sticky.
+  Click ([int](($ls.L + $ls.R) / 2)) ($ls.B - 26)
+  Start-Sleep -Milliseconds 500
+  Paste "내일 e2e 목록 할 일"
+  Keys "{ENTER}"
+  $t3 = WaitRows "select t.title, t.due_date, l.name from tasks t join lists l on l.id = t.list_id where t.title = 'e2e 목록 할 일'"
+  Check "스티커에서 추가한 할 일이 업무 목록에 내일 마감으로 저장" ($t3.Count -eq 1 -and $t3[0][1] -eq (Get-Date).AddDays(1).ToString("yyyy-MM-dd") -and $t3[0][2] -eq "업무") ($t3 | ConvertTo-Json -Compress)
+  Start-Sleep -Seconds 1
+  UiaDump $ls.Hwnd "list sticky, after add"
+  Check "마감일이 스티커 오른쪽 열에 '내일'로 표시" ([bool](Uia $ls.Hwnd "내일"))
+  Shot "07c-list-sticky"
+  $flagQuery = "select value from settings where id = 'list_sticky:' || (select id from lists where name = '업무')"
+  Check "업무 스티커 열림 상태가 저장됨" ("$(Cell $flagQuery)" -like '*"open":true*') "$(Cell $flagQuery)"
+  Click ($ls.R - 18) ($ls.T + 16) # ✕ at the right end of the bar
+  Start-Sleep -Seconds 2
+  Check "✕로 닫으면 창이 사라지고 열림 표시가 꺼짐" ((-not (First "업무")) -and ("$(Cell $flagQuery)" -like '*"open":false*')) "$(Cell $flagQuery)"
+}
+
 # ---- calendar: the wheel rolls the month grid, no scrollbar ---------------------
 $nav = Uia $main.Hwnd "*캘린더*" -Like
 if ($nav) { ClickEl $nav }

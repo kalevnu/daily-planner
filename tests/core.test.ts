@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseQuickAdd } from "../src/core/quickParse";
 import { tidyMarkdown } from "../src/core/markdown";
 import { describeRule, expandEvent, nextOccurrence, occursOn } from "../src/core/recurrence";
+import { shortDueKo } from "../src/core/dates";
 import { buildToday, completionPatch, dueReminders } from "../src/core/today";
 import type { CalendarEvent, Task, TaskList } from "../src/core/types";
 
@@ -173,5 +174,21 @@ describe("tidyMarkdown", () => {
   it("tightens lists and turns hard breaks into newlines", () => {
     expect(tidyMarkdown("hi\n\n- [x] one\n\n- [ ] two\n\n점심\\\n저녁\n")).toBe("hi\n\n- [x] one\n- [ ] two\n\n점심\n저녁");
     expect(tidyMarkdown("# t\n\n1. a\n2. b")).toBe("# t\n\n1. a\n2. b");
+  });
+});
+
+describe("shortDueKo", () => {
+  const today = "2026-10-26"; // a Monday
+  it("names the nearest days", () => {
+    expect(shortDueKo("2026-10-26", today)).toBe("오늘");
+    expect(shortDueKo("2026-10-27", today)).toBe("내일");
+    expect(shortDueKo("2026-10-25", today)).toBe("어제");
+    expect(shortDueKo("2026-10-20", today)).toBe("6일 지남");
+  });
+  it("shows weekday first within the week, date first after", () => {
+    expect(shortDueKo("2026-10-28", today)).toBe("수 10/28");
+    expect(shortDueKo("2026-11-01", today)).toBe("일 11/1");
+    expect(shortDueKo("2026-11-02", today)).toBe("11/2 (월)");
+    expect(shortDueKo("2027-01-05", today)).toBe("1/5 (화)");
   });
 });

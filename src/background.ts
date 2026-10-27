@@ -9,7 +9,7 @@ import { notify, onAppEvent, openBriefing, registerShortcuts, showMainWindow } f
 import { checkForUpdate } from "./platform/update";
 import { showToast } from "./ui/toast";
 import { LIST_COLORS, createNote, showNote } from "./ui/actions";
-import { TODAY_STICKY_OPEN_KEY, showTodaySticky } from "./ui/windows";
+import { TODAY_STICKY_OPEN_KEY, listStickyState, showListSticky, showTodaySticky } from "./ui/windows";
 
 export const BRIEFING_ENABLED_KEY = "briefing_enabled";
 const LAST_BRIEFING_KEY = "last_briefing_date";
@@ -38,6 +38,9 @@ async function restoreWindows() {
     if (note.is_open) await showNote(note);
   }
   if ((await getSetting(TODAY_STICKY_OPEN_KEY)) === "1") await showTodaySticky();
+  for (const id of [...(await listAll("lists")).map((l) => l.id), null]) {
+    if ((await listStickyState(id)).open) await showListSticky(id);
+  }
 }
 
 export async function maybeShowBriefing(force = false) {

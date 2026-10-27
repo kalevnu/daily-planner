@@ -6,6 +6,7 @@
     "main",
     "briefing",
     "today-sticky",
+    "list-*",
     "sticky-host",
     "note-*"
   ],

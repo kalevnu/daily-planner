@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { buildToday } from "../core/today";
 import { formatDateKo, formatTimeKo, timePart } from "../core/dates";
-import { getSetting, setSetting, updateRow } from "../data/store";
+import { compareTasks } from "../core/today";
+import type { Task } from "../core/types";
+import { getRow, getSetting, setSetting, updateRow } from "../data/store";
 import {
   announcePinChange,
   closeCurrent,
   keepPinned,
+  openListSticky,
   openTodaySticky,
   rememberStickyFocus,
   runStickyHost,
@@ -34,6 +37,132 @@ export async function showTodaySticky() {
   await setSetting(TODAY_STICKY_OPEN_KEY, "1");
   const pinned = (await getSetting(TODAY_STICKY_PINNED_KEY)) !== "0";
   await openTodaySticky(saved ? JSON.parse(saved) : DEFAULT_TODAY_STICKY, pinned);
+}
+
+// ---- list stickies ---------------------------------------------------------
+// One sticky per list, remembered in a setting per list: whether it is open,
+// pinned, and where it sits. `null` is the "목록 없음" list.
+
+interface ListStickyState {
+  open: boolean;
+  pinned: boolean;
+  geometry: WindowGeometry;
+}
+
+const listStickyId = (listId: string | null) => listId ?? "none";
+const listStickyKey = (listId: string | null) => `list_sticky:${listStickyId(listId)}`;
+
+export async function listStickyState(listId: string | null): Promise<ListStickyState> {
+  const saved = await getSetting(listStickyKey(listId));
+  return { open: false, pinned: true, geometry: { ...DEFAULT_TODAY_STICKY }, ...(saved ? JSON.parse(saved) : {}) };
+}
+
+async function saveListStickyState(listId: string | null, patch: Partial<ListStickyState>) {
+  const next = { ...(await listStickyState(listId)), ...patch };
+  await setSetting(listStickyKey(listId), JSON.stringify(next));
+}
+
+export async function showListSticky(listId: string | null) {
+  const state = await listStickyState(listId);
+  await saveListStickyState(listId, { open: true });
+  const name = listId ? (await getRow("lists", listId))?.name : "목록 없음";
+  await openListSticky(listStickyId(listId), name ?? "목록", state.geometry.x == null ? await nextStickySpot() : state.geometry, state.pinned);
+}
+
+// Where a sticky opened for the first time goes: a step down-right from the
+// today sticky when that has a place, so the two do not cover each other.
+async function nextStickySpot(): Promise<WindowGeometry> {
+  const saved = await getSetting(TODAY_STICKY_GEOMETRY_KEY);
+  const today: WindowGeometry = saved ? JSON.parse(saved) : DEFAULT_TODAY_STICKY;
+  if (today.x == null || today.y == null) return { ...DEFAULT_TODAY_STICKY };
+  return { ...DEFAULT_TODAY_STICKY, x: today.x + 40, y: today.y + 40 };
+}
+
+export function ListStickyWindow({ listId: rawId }: { listId: string }) {
+  const listId = rawId === "none" ? null : rawId;
+  const today = useToday();
+  const lists = useTable("lists");
+  const list = lists.find((l) => l.id === listId);
+  const all = useTable("tasks").filter((t) => t.list_id === listId);
+  const todo = all.filter((t) => t.status === "todo").sort(compareTasks);
+  const doneToday = all.filter((t) => t.status === "done" && t.completed_at && t.completed_at.slice(0, 10) === today);
+  const [pinned, setPinned] = useState(true);
+  const wantPinned = useRef(true);
+  const [editId, setEditId] = useState<string | null>(null);
+  const name = list?.name ?? (listId ? "" : "목록 없음");
+  const color = list?.color ?? "#94a3b8";
+
+  useEffect(() => {
+    listStickyState(listId).then((s) => {
+      wantPinned.current = s.pinned;
+      setPinned(s.pinned);
+    });
+    const offs: (() => void)[] = [];
+    trackGeometry((g) => saveListStickyState(listId, { geometry: g })).then((f) => offs.push(f));
+    rememberStickyFocus().then((f) => offs.push(f));
+    keepPinned(() => wantPinned.current).then((f) => offs.push(f));
+    return () => offs.forEach((f) => f());
+  }, [listId]);
+
+  // The list was deleted from the main window.
+  useEffect(() => {
+    if (listId && lists.length && !list) closeCurrent();
+  }, [listId, lists.length, list]);
+
+  const item = (t: Task) => <TaskItem key={t.id} task={t} lists={lists} compact dueRight onOpen={(x) => setEditId(x.id)} />;
+
+  return (
+    <div className="sticky sticky-list" style={{ "--list-color": color } as React.CSSProperties}>
+      <div className="sticky-bar" data-tauri-drag-region>
+        <span className="sticky-title" data-tauri-drag-region>
+          <i className="list-dot" style={{ background: color }} />
+          {name}
+          {todo.length > 0 && <span className="sticky-count">{todo.length}</span>}
+        </span>
+        <button className="icon-btn" title="메인 창에서 열기" onClick={() => showMainWindow(`list:${listStickyId(listId)}`)}>
+          ↗
+        </button>
+        <button
+          className={`icon-btn ${pinned ? "on" : ""}`}
+          title={pinned ? "항상 위 해제" : "항상 위에 고정"}
+          aria-label={pinned ? "항상 위 해제" : "항상 위에 고정"}
+          onClick={async () => {
+            wantPinned.current = !pinned;
+            setPinned(!pinned);
+            await setCurrentPinned(!pinned);
+            await saveListStickyState(listId, { pinned: !pinned });
+            await announcePinChange();
+          }}
+        >
+          📌
+        </button>
+        <button
+          className="icon-btn"
+          title="닫기"
+          onClick={async () => {
+            await saveListStickyState(listId, { open: false });
+            await closeCurrent();
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      <div className="sticky-body">
+        <div className="task-list">
+          {todo.map(item)}
+          {doneToday.map(item)}
+        </div>
+        {todo.length === 0 && doneToday.length === 0 && <p className="empty">남은 할 일이 없어요.</p>}
+      </div>
+      <QuickAdd defaults={{ list_id: listId }} placeholder={`${name || "할 일"} 추가 (예: 금요일 보고서)`} />
+      {editId && (
+        <div className="overlay-editor">
+          <TaskEditor taskId={editId} onClose={() => setEditId(null)} />
+        </div>
+      )}
+      <Toasts />
+    </div>
+  );
 }
 
 export function BriefingWindow() {
