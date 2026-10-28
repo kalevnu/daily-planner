@@ -6,6 +6,9 @@ import { isTauri } from "../platform/env";
 import { BRIEFING_ENABLED_KEY, applyShortcuts, loadShortcuts, maybeShowBriefing } from "../background";
 import { showTodaySticky } from "./windows";
 import { appVersion, checkForUpdate, type AvailableUpdate } from "../platform/update";
+import { ACADEMIC_SYNCED_KEY, refreshAcademic } from "../data/academic";
+import { isAcademic } from "../core/academic";
+import { useTable } from "./hooks";
 
 function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -169,6 +172,50 @@ function UpdateRow() {
   );
 }
 
+function AcademicRow() {
+  const events = useTable("events");
+  const count = events.filter(isAcademic).length;
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [state, setState] = useState<{ kind: "idle" | "busy" } | { kind: "done"; text: string } | { kind: "failed"; reason: string }>({ kind: "idle" });
+
+  useEffect(() => {
+    getSetting(ACADEMIC_SYNCED_KEY).then(setSyncedAt);
+  }, [state]);
+
+  const refresh = async () => {
+    setState({ kind: "busy" });
+    try {
+      const r = await refreshAcademic();
+      const changes = r.added || r.removed ? `새로 ${r.added}개, 빠진 ${r.removed}개` : "바뀐 것 없음";
+      setState({ kind: "done", text: `${r.total}개 확인 · ${changes}` });
+    } catch (e) {
+      setState({ kind: "failed", reason: String(e) });
+    }
+  };
+
+  const when = syncedAt ? new Date(syncedAt).toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+  let status = `캘린더에 ${count}개 · ${when ? `${when}에 받음` : "앱에 들어 있던 2026학년도 일정"} · 1주마다 자동으로 새로 받아요`;
+  if (state.kind === "busy") status = "학사일정 페이지 확인 중...";
+  if (state.kind === "done") status = `${state.text} · 캘린더에 ${count}개`;
+  if (state.kind === "failed") status = "새로 받기 실패 · 인터넷 연결을 확인해 주세요";
+
+  return (
+    <div className="setting-row">
+      <div>
+        <div className="setting-name">한양대 대학원 학사일정</div>
+        <div className="setting-desc" role="status" title={state.kind === "failed" ? state.reason : undefined}>
+          {status}
+        </div>
+      </div>
+      <div className="button-row">
+        <button className="btn" onClick={refresh} disabled={!isTauri || state.kind === "busy"}>
+          지금 새로 받기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsView() {
   const [autostart, setAuto] = useState(false);
   const [briefing, setBriefing] = useState(true);
@@ -232,6 +279,8 @@ export function SettingsView() {
           </button>
         </div>
       </div>
+
+      <AcademicRow />
 
       <UpdateRow />
 

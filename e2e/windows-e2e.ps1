@@ -147,6 +147,24 @@ function Uia($hwnd, $name, [switch] $Like) {
   }
   return $null
 }
+# 학사일정 items are drawn with a Hanyang-blue left edge (#0e4a84). WebView2
+# does not put calendar items in the UI Automation tree, so count those pixels
+# in the main window instead.
+function AcademicPixels($win) {
+  $w = $win.R - $win.L; $h = $win.B - $win.T
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($win.L, $win.T, 0, 0, $bmp.Size)
+  $n = 0
+  for ($y = 120; $y -lt $h; $y += 3) {
+    for ($x = 0; $x -lt $w; $x += 3) {
+      $c = $bmp.GetPixel($x, $y)
+      if ([Math]::Abs($c.R - 14) -lt 20 -and [Math]::Abs($c.G - 74) -lt 20 -and [Math]::Abs($c.B - 132) -lt 20) { $n++ }
+    }
+  }
+  $g.Dispose(); $bmp.Dispose()
+  return $n
+}
 # Window list for the log: title, z-order, topmost and owner.
 function DumpWindows($label) {
   Write-Host "--- windows: $label"
@@ -426,6 +444,30 @@ for ($i = 0; $i -lt 5; $i++) { [W]::mouse_event(0x0800, 0, 0, [uint32]::MaxValue
 Start-Sleep -Seconds 1
 Check "휠 5칸이면 다음 달로 넘어감" ([bool](Uia $main.Hwnd ((Get-Date).AddMonths(1).ToString("yyyy년 M월"))))
 Shot "07b-calendar-wheel"
+
+# ---- 학사일정: bundled on first run, shown with 🎓, can be hidden --------------------
+$academic = Cell "select count(*) from events where id like 'hyu-grad:%' and deleted_at is null"
+Check "학사일정이 처음 실행에 들어감 (90개 이상)" ([int]$academic -ge 90) "count=$academic synced=$(Cell "select value from settings where id='academic_synced_at'")"
+# The bundled items run to Feb 2027; the grid shows next month by now.
+$hasItems = (Get-Date) -lt [datetime]"2027-01-15"
+$main = First "Daily Planner"
+$shown = AcademicPixels $main
+$toggle = Uia $main.Hwnd "🎓 학사일정"
+Check "캘린더에 🎓 학사일정 버튼" ([bool]$toggle)
+if ($toggle) {
+  ClickEl $toggle
+  Start-Sleep -Seconds 1
+  $hidden = AcademicPixels $main
+  Check "버튼을 누르면 숨김이 저장됨" ((Cell "select value from settings where id='academic_hidden'") -eq "1")
+  if ($hasItems) { Check "숨기면 학사일정 막대가 사라짐" ($shown -gt 100 -and $hidden * 4 -lt $shown) "blue px shown=$shown hidden=$hidden" }
+  Shot "07d-academic-hidden"
+  ClickEl $toggle
+  Start-Sleep -Seconds 1
+  $again = AcademicPixels $main
+  Check "다시 보이기가 저장됨" ((Cell "select value from settings where id='academic_hidden'") -eq "0")
+  if ($hasItems) { Check "다시 누르면 학사일정 막대가 보임" ($again * 2 -gt $shown) "blue px again=$again" }
+}
+Shot "07e-academic"
 $nav = Uia $main.Hwnd "*오늘*" -Like
 if ($nav) { ClickEl $nav }
 Start-Sleep -Seconds 1
@@ -505,6 +547,19 @@ for ($i = 0; $i -lt 20 -and -not $status; $i++) {
   foreach ($pat in "최신 버전이에요*", "새 버전*", "업데이트 확인 실패*") { $status = Uia $main.Hwnd $pat -Like; if ($status) { break } }
 }
 Check "업데이트 확인이 답을 줌" ([bool]$status) $(if ($status) { $status.Current.Name } else { "" })
+
+# ---- settings: 학사일정 새로 받기 (whether the school site answers CI is not ours to
+# test, so either answer counts; the detail tells which) ---------------------------
+$btn = Uia $main.Hwnd "지금 새로 받기"
+Check "설정에 '지금 새로 받기' 버튼" ([bool]$btn)
+if ($btn) { ClickEl $btn }
+$status = $null
+for ($i = 0; $i -lt 30 -and -not $status; $i++) {
+  Start-Sleep -Seconds 1
+  foreach ($pat in "*개 확인*", "새로 받기 실패*") { $status = Uia $main.Hwnd $pat -Like; if ($status) { break } }
+}
+$after = Cell "select count(*) from events where id like 'hyu-grad:%' and deleted_at is null"
+Check "학사일정 새로 받기가 답을 주고 일정이 남아 있음" ([bool]$status -and [int]$after -ge 80) "$(if ($status) { $status.Current.Name }) count=$after"
 Shot "09-settings"
 
 # ---- closing the main window keeps the app in the tray ----------------------------

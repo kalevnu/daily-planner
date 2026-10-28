@@ -27,6 +27,17 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister-all",
     "updater:default",
-    "process:default"
+    "process:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "http://www.grad.hanyang.ac.kr/*"
+        },
+        {
+          "url": "https://www.grad.hanyang.ac.kr/*"
+        }
+      ]
+    }
   ]
 }

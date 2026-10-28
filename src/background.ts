@@ -4,6 +4,7 @@
 import { toDateStr } from "./core/dates";
 import { dueReminders } from "./core/today";
 import { createRow, getSetting, listAll, setSetting } from "./data/store";
+import { keepAcademicFresh } from "./data/academic";
 import { isTauri } from "./platform/env";
 import { notify, onAppEvent, openBriefing, registerShortcuts, showMainWindow } from "./platform/desktop";
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "./core/shortcuts";
@@ -106,6 +107,7 @@ export async function startBackground() {
   if (started) return;
   started = true;
   await firstRunSetup();
+  keepAcademicFresh();
 
   // Reminders work in the browser preview too.
   checkReminders();

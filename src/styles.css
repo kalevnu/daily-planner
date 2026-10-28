@@ -10,6 +10,8 @@
   --text-3: #8b9099;
   --accent: #2f6fed;
   --accent-soft: #e8f0fe;
+  --academic: #0e4a84;
+  --academic-soft: #e6eef8;
   --danger: #d9363e;
   --danger-soft: #fdecec;
   --hover: rgba(0, 0, 0, 0.045);
@@ -43,6 +45,8 @@
     --text-3: #7d828a;
     --accent: #6a9bff;
     --accent-soft: #23314d;
+    --academic: #8fb6ea;
+    --academic-soft: #1d2b40;
     --danger: #ff6b70;
     --danger-soft: #3a2124;
     --hover: rgba(255, 255, 255, 0.06);
@@ -917,6 +921,25 @@ textarea {
 .calendar .fc-task .fc-event-title,
 .calendar .fc-task .fc-event-time {
   color: inherit;
+}
+.calendar .fc-academic {
+  background: var(--academic-soft) !important;
+  border: none !important;
+  border-left: 3px solid var(--academic) !important;
+}
+.calendar .fc-academic .fc-event-title,
+.calendar .fc-academic .fc-event-main {
+  color: var(--academic);
+}
+.calendar-toolbar .academic-toggle {
+  opacity: 0.6;
+}
+.calendar-toolbar .academic-toggle.on {
+  opacity: 1;
+  color: var(--academic);
+  background: var(--academic-soft);
+  border-color: var(--academic);
+  font-weight: 600;
 }
 .calendar .fc-task-done {
   opacity: 0.5;

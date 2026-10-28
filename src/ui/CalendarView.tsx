@@ -9,7 +9,10 @@ import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { CalendarEvent, Task } from "../core/types";
 import { addDays, datePart, toDateStr, toDateTimeStr } from "../core/dates";
 import { expandEvents } from "../core/recurrence";
-import { updateRow } from "../data/store";
+import { getSetting, setSetting, updateRow } from "../data/store";
+import { ACADEMIC_LONG_DAYS, isAcademic } from "../core/academic";
+import { diffDays } from "../core/dates";
+import { ACADEMIC_HIDDEN_KEY } from "../data/academic";
 import { useTable } from "./hooks";
 import { EventEditor, type EventDraft } from "./EventEditor";
 
@@ -27,6 +30,13 @@ const VIEWS = [
 ];
 const WHEEL_STEP = 80; // px of wheel travel per week
 const WHEEL_COOLDOWN = 160; // ms between steps, so a flick does not fly off
+
+// Stacking order in a day: the user's own items first, then 학사일정, with
+// months-long periods (논문 심사, 방학) last so they give way when a day is full.
+function rankOf(ev: CalendarEvent): number {
+  if (!isAcademic(ev)) return 0;
+  return diffDays(ev.start, ev.end) + 1 > ACADEMIC_LONG_DAYS ? 2 : 1;
+}
 
 // FullCalendar treats an all-day end date as exclusive; ours is inclusive.
 function toFcEnd(ev: { all_day: number }, end: string) {
@@ -65,6 +75,7 @@ export function CalendarView({ onOpenTask }: Props) {
   const [viewId, setViewId] = useState(MONTH_VIEW);
   const [title, setTitle] = useState("");
   const [month, setMonth] = useState(monthKey(new Date()));
+  const [hideAcademic, setHideAcademic] = useState(false);
   const calRef = useRef<FullCalendar>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const wheel = useRef({ acc: 0, last: 0 });
@@ -72,16 +83,18 @@ export function CalendarView({ onOpenTask }: Props) {
 
   const fcEvents = useMemo<EventInput[]>(() => {
     if (!range) return [];
-    const occ = expandEvents(events, range.from, range.to).map<EventInput>((o) => ({
+    const shown = hideAcademic ? events.filter((e) => !isAcademic(e)) : events;
+    const occ = expandEvents(shown, range.from, range.to).map<EventInput>((o) => ({
       id: o.key,
-      title: o.event.title,
+      title: isAcademic(o.event) ? `🎓 ${o.event.title}` : o.event.title,
+      classNames: isAcademic(o.event) ? ["fc-academic"] : [],
       start: o.start,
       end: toFcEnd(o.event, o.end),
       allDay: !!o.event.all_day,
       backgroundColor: o.event.color,
       borderColor: o.event.color,
       editable: !o.event.rrule,
-      extendedProps: { kind: "event", eventId: o.event.id, date: datePart(o.start) },
+      extendedProps: { kind: "event", eventId: o.event.id, date: datePart(o.start), rank: rankOf(o.event) },
     }));
     const taskItems = tasks
       .filter((t) => t.due_date && t.due_date >= range.from && t.due_date <= range.to)
@@ -96,11 +109,20 @@ export function CalendarView({ onOpenTask }: Props) {
           textColor: color,
           backgroundColor: "transparent",
           borderColor: "transparent",
-          extendedProps: { kind: "task", taskId: t.id },
+          extendedProps: { kind: "task", taskId: t.id, rank: 0 },
         };
       });
     return [...occ, ...taskItems];
-  }, [events, tasks, lists, range]);
+  }, [events, tasks, lists, range, hideAcademic]);
+
+  useEffect(() => {
+    getSetting(ACADEMIC_HIDDEN_KEY).then((v) => setHideAcademic(v === "1"));
+  }, []);
+
+  const toggleAcademic = () => {
+    setHideAcademic(!hideAcademic);
+    setSetting(ACADEMIC_HIDDEN_KEY, hideAcademic ? "0" : "1");
+  };
 
   // Wheel over the month grid rolls it by weeks. A native listener so the
   // default scroll can be stopped (React's wheel handler is passive).
@@ -201,6 +223,9 @@ export function CalendarView({ onOpenTask }: Props) {
           <button className="btn" onClick={today}>
             오늘
           </button>
+          <button className={`btn academic-toggle ${hideAcademic ? "" : "on"}`} aria-pressed={!hideAcademic} onClick={toggleAcademic} title="한양대 대학원 학사일정 보이기/숨기기">
+            🎓 학사일정
+          </button>
         </div>
         <h2 className="calendar-title">{title}</h2>
         <div className="button-row seg">
@@ -224,6 +249,7 @@ export function CalendarView({ onOpenTask }: Props) {
           selectable
           editable
           dayMaxEvents={4}
+          eventOrder="rank,start,-duration,allDay,title"
           nowIndicator
           scrollTime="08:00:00"
           dayCellContent={(arg) => (arg.date.getDate() === 1 ? `${arg.date.getMonth() + 1}월 1일` : `${arg.date.getDate()}일`)}
