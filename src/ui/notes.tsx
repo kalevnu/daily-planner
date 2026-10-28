@@ -42,7 +42,7 @@ export function NotesView() {
             <NoteEditor note={n} />
           </div>
         ))}
-        {notes.length === 0 && <p className="empty">아직 메모가 없어요. Ctrl+Alt+N으로 어디서든 새 메모를 띄울 수 있어요.</p>}
+        {notes.length === 0 && <p className="empty">아직 메모가 없어요. 단축키(기본 Ctrl+Alt+N)로 어디서든 새 메모를 띄울 수 있어요.</p>}
       </div>
     </div>
   );
