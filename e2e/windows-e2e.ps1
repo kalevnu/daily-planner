@@ -297,9 +297,9 @@ Check "메모 X 버튼으로 창이 닫힘" ((Visible "메모").Count -eq 2) "co
 Check "닫은 메모는 DB에 남고 열림 표시만 꺼짐" (((Cell "select count(*) from notes") -eq 3) -and ((Cell "select count(*) from notes where is_open=1") -eq 2))
 
 # ---- today sticky and its pin ---------------------------------------------------
-Keys "^%t"; Start-Sleep -Seconds 3
+Keys "^%d"; Start-Sleep -Seconds 3
 $briefing = (First "오늘 브리핑")
-Check "Ctrl+Alt+T로 브리핑 열림" ([bool]$briefing)
+Check "Ctrl+Alt+D로 브리핑 열림" ([bool]$briefing)
 if ($briefing) {
   $btn = Uia $briefing.Hwnd "*바탕화면에 띄우기*" -Like
   if ($btn) { ClickEl $btn }
@@ -496,6 +496,46 @@ $entry = foreach ($hive in "HKCU", "HKLM") {
   $run.PSObject.Properties | Where-Object { "$($_.Value)" -like "*daily-planner*" } | ForEach-Object { "$hive $($_.Name) = $($_.Value)" }
 }
 Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$entry"
+
+# ---- settings: the briefing shortcut can be changed and the new key works -------
+$change = Uia $main.Hwnd "오늘 브리핑 열기 단축키 바꾸기"
+Check "설정에 브리핑 단축키 '바꾸기' 버튼" ([bool]$change)
+# The stickies cover this part of the settings page, so bring the main window
+# to the front with a click on the empty part of its sidebar (below the lists,
+# above the taskbar: the window is taller than the runner's screen) and press
+# the button through UIA; the field that appears takes the focus by itself.
+Click ($main.L + 60) ($main.T + 520)
+Start-Sleep -Milliseconds 500
+Check "메인 창이 앞에 옴" ([W]::GetForegroundWindow() -eq $main.Hwnd) "foreground=$([W]::Title([W]::GetForegroundWindow()))"
+if ($change) { ClickEl $change }
+$field = Uia $main.Hwnd "오늘 브리핑 열기 단축키 입력"
+Check "바꾸기를 누르면 키 입력란이 나타남" ([bool]$field)
+Keys "^%b" # taken by the recording page, not a global shortcut yet
+Start-Sleep -Seconds 1
+UiaDump $main.Hwnd "settings after key"
+$saved = $null
+for ($i = 0; $i -lt 5 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
+if ($saved -ne "CommandOrControl+Alt+B") {
+  # SendKeys did not get through; press the keys with scan codes, as a keyboard does.
+  Write-Host "SendKeys did not record; trying keybd_event"
+  [W]::keybd_event(0x11, 0x1D, 0, [UIntPtr]::Zero); [W]::keybd_event(0x12, 0x38, 0, [UIntPtr]::Zero)
+  [W]::keybd_event(0x42, 0x30, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [W]::keybd_event(0x42, 0x30, 2, [UIntPtr]::Zero)
+  [W]::keybd_event(0x12, 0x38, 2, [UIntPtr]::Zero); [W]::keybd_event(0x11, 0x1D, 2, [UIntPtr]::Zero)
+  Start-Sleep -Seconds 1
+  UiaDump $main.Hwnd "settings after keybd_event"
+  for ($i = 0; $i -lt 5 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
+}
+Check "눌러서 바꾼 단축키가 저장됨" ($saved -eq "CommandOrControl+Alt+B") "$saved"
+Check "설정에 새 단축키가 표시됨" ([bool](Uia $main.Hwnd "Ctrl + Alt + B"))
+foreach ($b in (Visible "오늘 브리핑")) { [W]::PostMessage($b.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+Start-Sleep -Seconds 1
+Keys "^%d"; Start-Sleep -Seconds 2
+Check "예전 키(Ctrl+Alt+D)로는 더 이상 안 열림" ((Visible "오늘 브리핑").Count -eq 0)
+Keys "^%b"; Start-Sleep -Seconds 3
+Check "새 키(Ctrl+Alt+B)로 브리핑 열림" ((Visible "오늘 브리핑").Count -eq 1)
+foreach ($b in (Visible "오늘 브리핑")) { [W]::PostMessage($b.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+Start-Sleep -Seconds 1
+Shot "08a-shortcut"
 
 # ---- settings: update check (no release to find on CI, so any answer counts) ----
 $btn = Uia $main.Hwnd "업데이트 확인"

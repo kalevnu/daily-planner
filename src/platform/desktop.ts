@@ -2,6 +2,7 @@
 // Every function degrades to something sensible in a plain browser so the UI
 // can be developed and previewed without the desktop shell.
 import { isTauri } from "./env";
+import { SHORTCUT_ACTIONS, type ShortcutAction } from "../core/shortcuts";
 
 export interface WindowGeometry {
   x: number | null;
@@ -288,21 +289,27 @@ export async function setAutostart(on: boolean) {
 
 // ---- global shortcuts -----------------------------------------------------
 
-export const SHORTCUTS = {
-  newNote: "CommandOrControl+Alt+N",
-  briefing: "CommandOrControl+Alt+T",
-};
-
-export async function registerShortcuts(handlers: { newNote: () => void; briefing: () => void }) {
-  if (!isTauri) return;
+// Registers every binding anew (earlier ones are dropped) and returns the
+// actions whose keys could not be taken, e.g. because another program holds them.
+export async function registerShortcuts(
+  bindings: Record<ShortcutAction, string>,
+  handlers: Record<ShortcutAction, () => void>,
+): Promise<Partial<Record<ShortcutAction, string>>> {
+  const failed: Partial<Record<ShortcutAction, string>> = {};
+  if (!isTauri) return failed;
   const gs = await import("@tauri-apps/plugin-global-shortcut");
   await gs.unregisterAll();
-  const bind = (keys: string, fn: () => void) =>
-    gs.register(keys, (e) => {
-      if (e.state === "Pressed") fn();
-    }).catch((err) => console.warn(`단축키 등록 실패 ${keys}`, err));
-  await bind(SHORTCUTS.newNote, handlers.newNote);
-  await bind(SHORTCUTS.briefing, handlers.briefing);
+  for (const action of SHORTCUT_ACTIONS) {
+    try {
+      await gs.register(bindings[action], (e) => {
+        if (e.state === "Pressed") handlers[action]();
+      });
+    } catch (err) {
+      console.warn(`단축키 등록 실패 ${bindings[action]}`, err);
+      failed[action] = String(err);
+    }
+  }
+  return failed;
 }
 
 // Listens for events the Rust side sends to the main window (tray menu, etc).

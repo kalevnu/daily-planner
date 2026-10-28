@@ -3,6 +3,7 @@ import { parseQuickAdd } from "../src/core/quickParse";
 import { tidyMarkdown } from "../src/core/markdown";
 import { describeRule, expandEvent, nextOccurrence, occursOn } from "../src/core/recurrence";
 import { shortDueKo } from "../src/core/dates";
+import { bindingFromKeyPress, shortcutLabel } from "../src/core/shortcuts";
 import { buildToday, completionPatch, dueReminders } from "../src/core/today";
 import type { CalendarEvent, Task, TaskList } from "../src/core/types";
 
@@ -190,5 +191,34 @@ describe("shortDueKo", () => {
     expect(shortDueKo("2026-11-01", today)).toBe("일 11/1");
     expect(shortDueKo("2026-11-02", today)).toBe("11/2 (월)");
     expect(shortDueKo("2027-01-05", today)).toBe("1/5 (화)");
+  });
+});
+
+describe("shortcuts", () => {
+  const press = (code: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}) =>
+    bindingFromKeyPress({ code, key: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+  it("turns a key press into a binding, from the physical key", () => {
+    expect(press("KeyD", { ctrlKey: true, altKey: true })).toBe("CommandOrControl+Alt+D");
+    expect(press("Digit1", { ctrlKey: true, shiftKey: true })).toBe("CommandOrControl+Shift+1");
+    expect(press("F9", { altKey: true })).toBe("Alt+F9");
+    expect(press("Space", { metaKey: true })).toBe("Super+Space");
+  });
+  it("refuses presses that cannot be a global shortcut", () => {
+    expect(press("ControlLeft", { ctrlKey: true })).toBeNull(); // modifier only
+    expect(press("KeyT", { shiftKey: true })).toBeNull(); // would fire while typing
+    expect(press("KeyT")).toBeNull();
+    expect(press("Enter", { ctrlKey: true })).toBeNull();
+  });
+  it("falls back to the key when the event has no physical key (synthetic input)", () => {
+    const k = (key: string, code = "") => bindingFromKeyPress({ code, key, ctrlKey: true, altKey: true, shiftKey: false, metaKey: false });
+    expect(k("b")).toBe("CommandOrControl+Alt+B");
+    expect(k("7")).toBe("CommandOrControl+Alt+7");
+    expect(k(" ")).toBe("CommandOrControl+Alt+Space");
+    expect(k("ㅌ")).toBeNull(); // Korean IME without a physical key: nothing to bind
+    expect(k("ㅌ", "KeyT")).toBe("CommandOrControl+Alt+T");
+  });
+  it("labels bindings the Windows way", () => {
+    expect(shortcutLabel("CommandOrControl+Alt+D")).toBe("Ctrl + Alt + D");
+    expect(shortcutLabel("Super+Shift+F2")).toBe("Win + Shift + F2");
   });
 });

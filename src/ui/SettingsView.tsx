@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../data/store";
-import { SHORTCUTS, isAutostartEnabled, notify, setAutostart } from "../platform/desktop";
+import { isAutostartEnabled, notify, setAutostart } from "../platform/desktop";
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, SHORTCUT_TITLES, bindingFromKeyPress, describeKeyPress, shortcutLabel, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "../core/shortcuts";
 import { isTauri } from "../platform/env";
-import { BRIEFING_ENABLED_KEY, maybeShowBriefing } from "../background";
+import { BRIEFING_ENABLED_KEY, applyShortcuts, loadShortcuts, maybeShowBriefing } from "../background";
 import { showTodaySticky } from "./windows";
 import { appVersion, checkForUpdate, type AvailableUpdate } from "../platform/update";
 import { ACADEMIC_SYNCED_KEY, refreshAcademic } from "../data/academic";
@@ -15,7 +16,81 @@ function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean;
   );
 }
 
-const shortcutLabel = (s: string) => s.replace("CommandOrControl", "Ctrl").replace(/\+/g, " + ");
+// One global shortcut: shows the binding; "바꾸기" records the next key press.
+function ShortcutRow({ action, binding, onChange, problem }: { action: ShortcutAction; binding: string; onChange: (b: string) => void; problem?: string }) {
+  const [recording, setRecording] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null); // a press that cannot be a shortcut
+  const title = SHORTCUT_TITLES[action];
+
+  // While recording, the next key press anywhere in the window is taken
+  // (focus may sit on the button that started it); a click elsewhere or Esc
+  // gives up.
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") return setRecording(false);
+      const b = bindingFromKeyPress(e);
+      if (!b) return setRejected(describeKeyPress(e) || null);
+      setRecording(false);
+      onChange(b);
+    };
+    setRejected(null);
+    const onClick = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".shortcut-record")) setRecording(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onClick, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onClick, true);
+    };
+  }, [recording, onChange]);
+
+  return (
+    <div className="shortcut-row">
+      {recording ? (
+        <input className="shortcut-record" autoFocus readOnly value="" placeholder="키를 누르세요 (Esc 취소)" aria-label={`${title} 단축키 입력`} />
+      ) : (
+        <kbd>{shortcutLabel(binding)}</kbd>
+      )}
+      <span className="shortcut-title">{title}</span>
+      <button className="link-btn" aria-label={`${title} 단축키 바꾸기`} onClick={() => setRecording(true)}>
+        바꾸기
+      </button>
+      {binding !== DEFAULT_SHORTCUTS[action] && (
+        <button className="link-btn" aria-label={`${title} 단축키 기본값`} onClick={() => onChange(DEFAULT_SHORTCUTS[action])}>
+          기본값
+        </button>
+      )}
+      {recording && rejected && <span className="shortcut-problem">{rejected}: Ctrl, Alt, Win 중 하나와 함께 눌러 주세요.</span>}
+      {problem && <span className="shortcut-problem">다른 프로그램이 쓰고 있는 키예요. 다른 키를 골라 주세요.</span>}
+    </div>
+  );
+}
+
+function ShortcutSettings() {
+  const [bindings, setBindings] = useState<Shortcuts>(DEFAULT_SHORTCUTS);
+  const [problems, setProblems] = useState<Partial<Record<ShortcutAction, string>>>({});
+  useEffect(() => {
+    loadShortcuts().then(setBindings);
+  }, []);
+  const change = async (action: ShortcutAction, b: string) => {
+    await setSetting(shortcutSettingKey(action), b);
+    setBindings({ ...bindings, [action]: b });
+    setProblems(await applyShortcuts());
+  };
+  return (
+    <>
+      <h3 className="settings-sub">단축키 (어느 프로그램에서든 동작)</h3>
+      {SHORTCUT_ACTIONS.map((a) => (
+        <ShortcutRow key={a} action={a} binding={bindings[a]} onChange={(b) => change(a, b)} problem={problems[a]} />
+      ))}
+      <p className="muted small">Ctrl, Alt, Win 중 하나 이상과 글자·숫자·F키를 함께 누르세요.</p>
+    </>
+  );
+}
 
 type UpdateState =
   | { kind: "idle" }
@@ -209,13 +284,7 @@ export function SettingsView() {
 
       <UpdateRow />
 
-      <h3 className="settings-sub">단축키 (어느 프로그램에서든 동작)</h3>
-      <div className="shortcut-row">
-        <kbd>{shortcutLabel(SHORTCUTS.newNote)}</kbd> 새 스티커 메모
-      </div>
-      <div className="shortcut-row">
-        <kbd>{shortcutLabel(SHORTCUTS.briefing)}</kbd> 오늘 브리핑 열기
-      </div>
+      <ShortcutSettings />
 
       <h3 className="settings-sub">빠른 입력 문법</h3>
       <ul className="help-list">

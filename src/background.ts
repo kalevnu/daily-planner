@@ -7,6 +7,7 @@ import { createRow, getSetting, listAll, setSetting } from "./data/store";
 import { keepAcademicFresh } from "./data/academic";
 import { isTauri } from "./platform/env";
 import { notify, onAppEvent, openBriefing, registerShortcuts, showMainWindow } from "./platform/desktop";
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "./core/shortcuts";
 import { checkForUpdate } from "./platform/update";
 import { showToast } from "./ui/toast";
 import { LIST_COLORS, createNote, showNote } from "./ui/actions";
@@ -23,7 +24,7 @@ const WELCOME_NOTE = `환영해요! 이건 스티커 메모예요.
 - [ ] 메모를 클릭해서 내용 고치기
 - [ ] 위쪽 막대를 끌어서 원하는 곳에 두기
 - [ ] Ctrl+Alt+N 으로 어디서든 새 메모
-- [ ] Ctrl+Alt+T 로 오늘 브리핑 다시 보기`;
+- [ ] Ctrl+Alt+D 로 오늘 브리핑 다시 보기 (단축키는 설정에서 바꿀 수 있어요)`;
 
 async function firstRunSetup() {
   if (await getSetting("initialized")) return;
@@ -85,6 +86,21 @@ async function checkUpdates() {
   }
 }
 
+// The user's shortcut bindings (settings), defaults where none is saved.
+export async function loadShortcuts(): Promise<Shortcuts> {
+  const s = { ...DEFAULT_SHORTCUTS };
+  for (const action of SHORTCUT_ACTIONS) s[action] = (await getSetting(shortcutSettingKey(action))) || DEFAULT_SHORTCUTS[action];
+  return s;
+}
+
+// Registers the saved bindings; returns the actions whose keys could not be taken.
+export async function applyShortcuts(): Promise<Partial<Record<ShortcutAction, string>>> {
+  return registerShortcuts(await loadShortcuts(), {
+    newNote: () => createNote("", true),
+    briefing: () => maybeShowBriefing(true),
+  });
+}
+
 let started = false;
 
 export async function startBackground() {
@@ -100,10 +116,7 @@ export async function startBackground() {
   if (!isTauri) return;
 
   await restoreWindows();
-  await registerShortcuts({
-    newNote: () => createNote("", true),
-    briefing: () => maybeShowBriefing(true),
-  });
+  await applyShortcuts();
   await onAppEvent("tray", (action) => {
     if (action === "briefing") maybeShowBriefing(true);
     if (action === "today-sticky") showTodaySticky();
