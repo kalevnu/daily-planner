@@ -127,6 +127,11 @@ export async function listAll<T extends TableName>(table: T): Promise<Tables[T][
   return rows.filter((r) => !r.deleted_at);
 }
 
+// Includes soft-deleted rows, for code that must remember what the user removed.
+export async function listWithDeleted<T extends TableName>(table: T): Promise<Tables[T][]> {
+  return (await backend.all(table)) as unknown as Tables[T][];
+}
+
 export async function getRow<T extends TableName>(table: T, id: string): Promise<Tables[T] | undefined> {
   const rows = (await backend.all(table)) as unknown as Tables[T][];
   return rows.find((r) => r.id === id && !r.deleted_at);
