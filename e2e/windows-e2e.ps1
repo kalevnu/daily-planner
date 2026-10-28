@@ -458,8 +458,12 @@ Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$entr
 # ---- settings: the briefing shortcut can be changed and the new key works -------
 $change = Uia $main.Hwnd "오늘 브리핑 열기 단축키 바꾸기"
 Check "설정에 브리핑 단축키 '바꾸기' 버튼" ([bool]$change)
-if ($change) { ClickEl $change }
-Start-Sleep -Milliseconds 800
+# Real clicks: the keys must land in the main window, which a UIA Invoke
+# does not bring to the front.
+if ($change) { ClickClear $change }
+$field = Uia $main.Hwnd "오늘 브리핑 열기 단축키 입력"
+Check "바꾸기를 누르면 키 입력란이 나타남" ([bool]$field)
+if ($field) { ClickClear $field }
 Keys "^%b" # recorded by the focused field, not a global shortcut yet
 $saved = $null
 for ($i = 0; $i -lt 10 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
