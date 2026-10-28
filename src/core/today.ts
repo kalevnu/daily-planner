@@ -1,6 +1,7 @@
 import type { CalendarEvent, Occurrence, Task } from "./types";
 import { addDays, formatTimeKo, parseLocal, timePart, toDateStr } from "./dates";
 import { expandEvents, nextOccurrence } from "./recurrence";
+import { academicOnDay } from "./academic";
 
 export interface TodaySummary {
   events: Occurrence[];
@@ -28,7 +29,9 @@ export function buildToday(allTasks: Task[], allEvents: CalendarEvent[], today: 
   const todo = tasks.filter((t) => t.status === "todo");
   const weekEnd = addDays(today, 7);
 
-  const events = expandEvents(allEvents, today, today).sort(
+  const events = expandEvents(allEvents, today, today)
+    .filter((o) => academicOnDay(o.event, today))
+    .sort(
     (a, b) => Number(b.event.all_day) - Number(a.event.all_day) || a.start.localeCompare(b.start),
   );
 
