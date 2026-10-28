@@ -21,6 +21,7 @@ export const shortcutSettingKey = (action: ShortcutAction) => `shortcut_${action
 // pass plain objects.
 export interface KeyPress {
   code: string; // physical key, e.g. "KeyD" (unaffected by the Korean IME)
+  key: string; // fallback when the event carries no physical key (synthetic input)
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
@@ -31,15 +32,34 @@ export interface KeyPress {
 // no main key yet (only modifiers held), a key we do not bind, or no Ctrl /
 // Alt / Win to keep it from firing while typing.
 export function bindingFromKeyPress(e: KeyPress): string | null {
-  let key: string | null = null;
-  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
-  else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
-  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(e.code)) key = e.code;
-  else if (e.code === "Space") key = "Space";
+  const key = keyName(e.code) ?? keyName(keyAsCode(e.key));
   if (!key) return null;
   if (!e.ctrlKey && !e.altKey && !e.metaKey) return null;
   const mods = [e.ctrlKey && "CommandOrControl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean);
   return [...mods, key].join("+");
+}
+
+function keyName(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  if (code === "Space") return "Space";
+  return null;
+}
+
+// KeyboardEvent.key as a code, for events without one: "b" -> "KeyB".
+function keyAsCode(key: string): string {
+  if (/^[a-zA-Z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  if (key === " ") return "Space";
+  return key;
+}
+
+// What was pressed, for the hint when a press cannot be a shortcut.
+export function describeKeyPress(e: KeyPress): string {
+  const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Win"].filter(Boolean);
+  const key = keyName(e.code) ?? keyName(keyAsCode(e.key));
+  return [...mods, key ?? (e.key.length === 1 ? e.key : null)].filter(Boolean).join(" + ");
 }
 
 // "CommandOrControl+Alt+D" -> "Ctrl + Alt + D"

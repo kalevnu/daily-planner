@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../data/store";
 import { isAutostartEnabled, notify, setAutostart } from "../platform/desktop";
-import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, SHORTCUT_TITLES, bindingFromKeyPress, shortcutLabel, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "../core/shortcuts";
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, SHORTCUT_TITLES, bindingFromKeyPress, describeKeyPress, shortcutLabel, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "../core/shortcuts";
 import { isTauri } from "../platform/env";
 import { BRIEFING_ENABLED_KEY, applyShortcuts, loadShortcuts, maybeShowBriefing } from "../background";
 import { showTodaySticky } from "./windows";
@@ -16,6 +16,7 @@ function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean;
 // One global shortcut: shows the binding; "바꾸기" records the next key press.
 function ShortcutRow({ action, binding, onChange, problem }: { action: ShortcutAction; binding: string; onChange: (b: string) => void; problem?: string }) {
   const [recording, setRecording] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null); // a press that cannot be a shortcut
   const title = SHORTCUT_TITLES[action];
 
   // While recording, the next key press anywhere in the window is taken
@@ -28,10 +29,11 @@ function ShortcutRow({ action, binding, onChange, problem }: { action: ShortcutA
       e.stopPropagation();
       if (e.key === "Escape") return setRecording(false);
       const b = bindingFromKeyPress(e);
-      if (!b) return;
+      if (!b) return setRejected(describeKeyPress(e) || null);
       setRecording(false);
       onChange(b);
     };
+    setRejected(null);
     const onClick = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest(".shortcut-record")) setRecording(false);
     };
@@ -59,6 +61,7 @@ function ShortcutRow({ action, binding, onChange, problem }: { action: ShortcutA
           기본값
         </button>
       )}
+      {recording && rejected && <span className="shortcut-problem">{rejected}: Ctrl, Alt, Win 중 하나와 함께 눌러 주세요.</span>}
       {problem && <span className="shortcut-problem">다른 프로그램이 쓰고 있는 키예요. 다른 키를 골라 주세요.</span>}
     </div>
   );

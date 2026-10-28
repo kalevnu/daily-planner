@@ -472,7 +472,17 @@ Keys "^%b" # taken by the recording page, not a global shortcut yet
 Start-Sleep -Seconds 1
 UiaDump $main.Hwnd "settings after key"
 $saved = $null
-for ($i = 0; $i -lt 10 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
+for ($i = 0; $i -lt 5 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
+if ($saved -ne "CommandOrControl+Alt+B") {
+  # SendKeys did not get through; press the keys with scan codes, as a keyboard does.
+  Write-Host "SendKeys did not record; trying keybd_event"
+  [W]::keybd_event(0x11, 0x1D, 0, [UIntPtr]::Zero); [W]::keybd_event(0x12, 0x38, 0, [UIntPtr]::Zero)
+  [W]::keybd_event(0x42, 0x30, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80; [W]::keybd_event(0x42, 0x30, 2, [UIntPtr]::Zero)
+  [W]::keybd_event(0x12, 0x38, 2, [UIntPtr]::Zero); [W]::keybd_event(0x11, 0x1D, 2, [UIntPtr]::Zero)
+  Start-Sleep -Seconds 1
+  UiaDump $main.Hwnd "settings after keybd_event"
+  for ($i = 0; $i -lt 5 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
+}
 Check "눌러서 바꾼 단축키가 저장됨" ($saved -eq "CommandOrControl+Alt+B") "$saved"
 Check "설정에 새 단축키가 표시됨" ([bool](Uia $main.Hwnd "Ctrl + Alt + B"))
 foreach ($b in (Visible "오늘 브리핑")) { [W]::PostMessage($b.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }

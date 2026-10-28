@@ -196,7 +196,7 @@ describe("shortDueKo", () => {
 
 describe("shortcuts", () => {
   const press = (code: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}) =>
-    bindingFromKeyPress({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+    bindingFromKeyPress({ code, key: "", ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
   it("turns a key press into a binding, from the physical key", () => {
     expect(press("KeyD", { ctrlKey: true, altKey: true })).toBe("CommandOrControl+Alt+D");
     expect(press("Digit1", { ctrlKey: true, shiftKey: true })).toBe("CommandOrControl+Shift+1");
@@ -208,6 +208,14 @@ describe("shortcuts", () => {
     expect(press("KeyT", { shiftKey: true })).toBeNull(); // would fire while typing
     expect(press("KeyT")).toBeNull();
     expect(press("Enter", { ctrlKey: true })).toBeNull();
+  });
+  it("falls back to the key when the event has no physical key (synthetic input)", () => {
+    const k = (key: string, code = "") => bindingFromKeyPress({ code, key, ctrlKey: true, altKey: true, shiftKey: false, metaKey: false });
+    expect(k("b")).toBe("CommandOrControl+Alt+B");
+    expect(k("7")).toBe("CommandOrControl+Alt+7");
+    expect(k(" ")).toBe("CommandOrControl+Alt+Space");
+    expect(k("ㅌ")).toBeNull(); // Korean IME without a physical key: nothing to bind
+    expect(k("ㅌ", "KeyT")).toBe("CommandOrControl+Alt+T");
   });
   it("labels bindings the Windows way", () => {
     expect(shortcutLabel("CommandOrControl+Alt+D")).toBe("Ctrl + Alt + D");
