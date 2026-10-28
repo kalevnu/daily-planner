@@ -466,7 +466,9 @@ Start-Sleep -Milliseconds 500
 if ($change) { ClickEl $change }
 $field = Uia $main.Hwnd "오늘 브리핑 열기 단축키 입력"
 Check "바꾸기를 누르면 키 입력란이 나타남" ([bool]$field)
-Keys "^%b" # recorded by the focused field, not a global shortcut yet
+Keys "^%b" # taken by the recording page, not a global shortcut yet
+Start-Sleep -Seconds 1
+UiaDump $main.Hwnd "settings after key"
 $saved = $null
 for ($i = 0; $i -lt 10 -and $saved -ne "CommandOrControl+Alt+B"; $i++) { Start-Sleep -Seconds 1; $saved = Cell "select value from settings where id='shortcut_briefing'" }
 Check "눌러서 바꾼 단축키가 저장됨" ($saved -eq "CommandOrControl+Alt+B") "$saved"

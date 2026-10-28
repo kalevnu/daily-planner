@@ -17,26 +17,36 @@ function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean;
 function ShortcutRow({ action, binding, onChange, problem }: { action: ShortcutAction; binding: string; onChange: (b: string) => void; problem?: string }) {
   const [recording, setRecording] = useState(false);
   const title = SHORTCUT_TITLES[action];
+
+  // While recording, the next key press anywhere in the window is taken
+  // (focus may sit on the button that started it); a click elsewhere or Esc
+  // gives up.
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") return setRecording(false);
+      const b = bindingFromKeyPress(e);
+      if (!b) return;
+      setRecording(false);
+      onChange(b);
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".shortcut-record")) setRecording(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onClick, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onClick, true);
+    };
+  }, [recording, onChange]);
+
   return (
     <div className="shortcut-row">
       {recording ? (
-        <input
-          className="shortcut-record"
-          autoFocus
-          readOnly
-          value=""
-          placeholder="키를 누르세요 (Esc 취소)"
-          aria-label={`${title} 단축키 입력`}
-          onBlur={() => setRecording(false)}
-          onKeyDown={(e) => {
-            e.preventDefault();
-            if (e.key === "Escape") return setRecording(false);
-            const b = bindingFromKeyPress(e);
-            if (!b) return;
-            setRecording(false);
-            onChange(b);
-          }}
-        />
+        <input className="shortcut-record" autoFocus readOnly value="" placeholder="키를 누르세요 (Esc 취소)" aria-label={`${title} 단축키 입력`} />
       ) : (
         <kbd>{shortcutLabel(binding)}</kbd>
       )}
