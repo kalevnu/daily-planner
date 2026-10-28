@@ -459,10 +459,12 @@ Check "자동 실행 켜면 시작 프로그램에 등록" ([bool]$entry) "$entr
 $change = Uia $main.Hwnd "오늘 브리핑 열기 단축키 바꾸기"
 Check "설정에 브리핑 단축키 '바꾸기' 버튼" ([bool]$change)
 # The stickies cover this part of the settings page, so bring the main window
-# to the front with a click on its sidebar and press the button through UIA;
-# the field that appears takes the focus by itself.
-Click ($main.L + 60) ($main.B - 60)
+# to the front with a click on the empty part of its sidebar (below the lists,
+# above the taskbar: the window is taller than the runner's screen) and press
+# the button through UIA; the field that appears takes the focus by itself.
+Click ($main.L + 60) ($main.T + 520)
 Start-Sleep -Milliseconds 500
+Check "메인 창이 앞에 옴" ([W]::GetForegroundWindow() -eq $main.Hwnd) "foreground=$([W]::Title([W]::GetForegroundWindow()))"
 if ($change) { ClickEl $change }
 $field = Uia $main.Hwnd "오늘 브리핑 열기 단축키 입력"
 Check "바꾸기를 누르면 키 입력란이 나타남" ([bool]$field)
