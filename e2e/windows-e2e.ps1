@@ -152,7 +152,7 @@ function AcademicItem($hwnd, [int] $tries = 8) {
   for ($try = 0; $try -lt $tries; $try++) {
     $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
     $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($el in $all) { $n = $el.Current.Name; if ($n -like "🎓 *" -and $n -ne "🎓 학사일정") { return $el } }
+    foreach ($el in $all) { $n = $el.Current.Name; if ($n.Contains("🎓") -and $n -ne "🎓 학사일정") { return $el } }
     Start-Sleep -Milliseconds 750
   }
   return $null
@@ -443,6 +443,11 @@ Check "학사일정이 처음 실행에 들어감 (90개 이상)" ([int]$academi
 # The bundled items run to Feb 2027; the grid shows next month by now.
 $hasItems = (Get-Date) -lt [datetime]"2027-01-15"
 if ($hasItems) { Check "캘린더에 🎓 학사일정이 보임" ([bool](AcademicItem $main.Hwnd)) }
+# How the calendar items read to UI Automation, for when the check above fails.
+$root = [System.Windows.Automation.AutomationElement]::FromHandle($main.Hwnd)
+$root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) |
+  Where-Object { $_.Current.Name -like "*학위*" } | Select-Object -First 5 |
+  ForEach-Object { Write-Host ("  uia: [{0}] '{1}'" -f $_.Current.ControlType.ProgrammaticName, $_.Current.Name) }
 $toggle = Uia $main.Hwnd "🎓 학사일정"
 Check "캘린더에 🎓 학사일정 버튼" ([bool]$toggle)
 if ($toggle) {
