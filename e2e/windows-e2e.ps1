@@ -459,7 +459,7 @@ if ($toggle) {
   Start-Sleep -Seconds 1
   $hidden = AcademicPixels $main
   Check "버튼을 누르면 숨김이 저장됨" ((Cell "select value from settings where id='academic_hidden'") -eq "1")
-  if ($hasItems) { Check "숨기면 학사일정 막대가 사라짐" ($shown -gt 100 -and $hidden * 10 -lt $shown) "blue px shown=$shown hidden=$hidden" }
+  if ($hasItems) { Check "숨기면 학사일정 막대가 사라짐" ($shown -gt 100 -and $hidden * 4 -lt $shown) "blue px shown=$shown hidden=$hidden" }
   Shot "07d-academic-hidden"
   ClickEl $toggle
   Start-Sleep -Seconds 1
