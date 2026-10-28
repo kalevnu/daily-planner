@@ -147,15 +147,23 @@ function Uia($hwnd, $name, [switch] $Like) {
   }
   return $null
 }
-# A 🎓 학사일정 item on the calendar (not the button of the same look).
-function AcademicItem($hwnd, [int] $tries = 8) {
-  for ($try = 0; $try -lt $tries; $try++) {
-    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
-    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($el in $all) { $n = $el.Current.Name; if ($n.Contains("🎓") -and $n -ne "🎓 학사일정") { return $el } }
-    Start-Sleep -Milliseconds 750
+# 학사일정 items are drawn with a Hanyang-blue left edge (#0e4a84). WebView2
+# does not put calendar items in the UI Automation tree, so count those pixels
+# in the main window instead.
+function AcademicPixels($win) {
+  $w = $win.R - $win.L; $h = $win.B - $win.T
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($win.L, $win.T, 0, 0, $bmp.Size)
+  $n = 0
+  for ($y = 120; $y -lt $h; $y += 3) {
+    for ($x = 0; $x -lt $w; $x += 3) {
+      $c = $bmp.GetPixel($x, $y)
+      if ([Math]::Abs($c.R - 14) -lt 20 -and [Math]::Abs($c.G - 74) -lt 20 -and [Math]::Abs($c.B - 132) -lt 20) { $n++ }
+    }
   }
-  return $null
+  $g.Dispose(); $bmp.Dispose()
+  return $n
 }
 # Window list for the log: title, z-order, topmost and owner.
 function DumpWindows($label) {
@@ -442,23 +450,22 @@ $academic = Cell "select count(*) from events where id like 'hyu-grad:%' and del
 Check "학사일정이 처음 실행에 들어감 (90개 이상)" ([int]$academic -ge 90) "count=$academic synced=$(Cell "select value from settings where id='academic_synced_at'")"
 # The bundled items run to Feb 2027; the grid shows next month by now.
 $hasItems = (Get-Date) -lt [datetime]"2027-01-15"
-if ($hasItems) { Check "캘린더에 🎓 학사일정이 보임" ([bool](AcademicItem $main.Hwnd)) }
-# How the calendar items read to UI Automation, for when the check above fails.
-$root = [System.Windows.Automation.AutomationElement]::FromHandle($main.Hwnd)
-$root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) |
-  Where-Object { $_.Current.Name -like "*학위*" } | Select-Object -First 5 |
-  ForEach-Object { Write-Host ("  uia: [{0}] '{1}'" -f $_.Current.ControlType.ProgrammaticName, $_.Current.Name) }
+$main = First "Daily Planner"
+$shown = AcademicPixels $main
 $toggle = Uia $main.Hwnd "🎓 학사일정"
 Check "캘린더에 🎓 학사일정 버튼" ([bool]$toggle)
 if ($toggle) {
   ClickEl $toggle
   Start-Sleep -Seconds 1
-  Check "버튼을 누르면 학사일정이 숨겨지고 저장됨" ((-not (AcademicItem $main.Hwnd 2)) -and (Cell "select value from settings where id='academic_hidden'") -eq "1")
+  $hidden = AcademicPixels $main
+  Check "버튼을 누르면 숨김이 저장됨" ((Cell "select value from settings where id='academic_hidden'") -eq "1")
+  if ($hasItems) { Check "숨기면 학사일정 막대가 사라짐" ($shown -gt 100 -and $hidden * 10 -lt $shown) "blue px shown=$shown hidden=$hidden" }
   Shot "07d-academic-hidden"
   ClickEl $toggle
   Start-Sleep -Seconds 1
-  if ($hasItems) { Check "다시 누르면 학사일정이 보임" ([bool](AcademicItem $main.Hwnd)) }
+  $again = AcademicPixels $main
   Check "다시 보이기가 저장됨" ((Cell "select value from settings where id='academic_hidden'") -eq "0")
+  if ($hasItems) { Check "다시 누르면 학사일정 막대가 보임" ($again * 2 -gt $shown) "blue px again=$again" }
 }
 Shot "07e-academic"
 $nav = Uia $main.Hwnd "*오늘*" -Like
