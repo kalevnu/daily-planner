@@ -1,5 +1,5 @@
 import type { TableName, Tables } from "../core/types";
-import { SCHEMA_VERSION, TABLES, columnsOf, createTableSql } from "./schema";
+import { COLUMNS, SCHEMA_VERSION, TABLES, columnsOf, createTableSql } from "./schema";
 import { isTauri } from "../platform/env";
 
 type Row = Record<string, unknown>;
@@ -23,7 +23,14 @@ class SqliteBackend implements Backend {
       const db = await Database.load("sqlite:planner.db");
       const [{ user_version }] = await db.select<{ user_version: number }[]>("PRAGMA user_version");
       if (user_version < SCHEMA_VERSION) {
-        for (const t of TABLES) await db.execute(createTableSql(t));
+        for (const t of TABLES) {
+          await db.execute(createTableSql(t));
+          // Tables made by an older version lack the newer columns.
+          const have = new Set((await db.select<{ name: string }[]>(`PRAGMA table_info(${t})`)).map((c) => c.name));
+          for (const [name, type] of Object.entries(COLUMNS[t])) {
+            if (!have.has(name)) await db.execute(`ALTER TABLE ${t} ADD COLUMN "${name}" ${type}`);
+          }
+        }
         await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       }
       return db;
@@ -150,6 +157,13 @@ export async function createRow<T extends TableName>(table: T, fields: NewRow<T>
 export async function updateRow<T extends TableName>(table: T, id: string, patch: Partial<Tables[T]>): Promise<void> {
   await backend.patch(table, id, { ...patch, updated_at: nowIso() });
   notify(table);
+}
+
+// Several rows at once, with one change notice so windows redraw once.
+export async function updateRows<T extends TableName>(table: T, patches: { id: string; patch: Partial<Tables[T]> }[]): Promise<void> {
+  const now = nowIso();
+  for (const { id, patch } of patches) await backend.patch(table, id, { ...patch, updated_at: now });
+  if (patches.length) notify(table);
 }
 
 export async function deleteRow(table: TableName, id: string): Promise<void> {

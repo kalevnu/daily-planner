@@ -1,7 +1,8 @@
 import type { CalendarEvent, Note, Task } from "../core/types";
 import { addDays, toDateStr } from "../core/dates";
 import { completionPatch, reopenPatch } from "../core/today";
-import { createRow, deleteRow, getRow, listAll, restoreRow, updateRow, type NewRow } from "../data/store";
+import { createRow, deleteRow, getRow, listAll, restoreRow, updateRow, updateRows, type NewRow } from "../data/store";
+import { orderPatches } from "../core/order";
 import { closeWindow, openNoteWindow } from "../platform/desktop";
 import { showToast } from "./toast";
 
@@ -29,6 +30,11 @@ export function newTask(fields: Partial<NewRow<"tasks">>): NewRow<"tasks"> {
 
 export function addTask(fields: Partial<NewRow<"tasks">>) {
   return createRow("tasks", newTask(fields));
+}
+
+// Saves a list's tasks in the order the user dragged them into.
+export function reorderTasks(ids: string[]) {
+  return updateRows("tasks", orderPatches(ids));
 }
 
 export async function toggleTask(t: Task) {
