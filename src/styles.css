@@ -464,6 +464,39 @@ textarea {
 .sticky .task-list > .task + .task {
   box-shadow: none;
 }
+/* Rows that can be dragged up and down. */
+.sortable-row {
+  position: relative;
+  border-radius: 8px;
+  transition: transform 0.15s ease;
+}
+.sortable.sorting {
+  user-select: none;
+  cursor: grabbing;
+}
+.sortable.sorting .task {
+  cursor: grabbing;
+}
+.sortable-row.dragging {
+  z-index: 2;
+  transition: none;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.task-list.sortable > .sortable-row + .sortable-row > .task {
+  box-shadow: inset 0 1px 0 var(--border);
+}
+.task-list.sortable > .sortable-row:hover + .sortable-row > .task,
+.task-list.sortable > .sortable-row > .task:hover,
+.task-list.sortable > .sortable-row > .task.selected,
+.task-list.sortable > .sortable-row.dragging > .task,
+.task-list.sortable > .sortable-row.dragging + .sortable-row > .task,
+.sticky .task-list.sortable > .sortable-row + .sortable-row > .task {
+  box-shadow: none;
+}
+.sticky .sortable-row.dragging {
+  background: color-mix(in srgb, var(--list-color, #94a3b8) 14%, #fffdf7);
+}
 .task-body {
   flex: 1;
   min-width: 0;
@@ -1373,6 +1406,9 @@ textarea {
 @media (prefers-color-scheme: dark) {
   .sticky-list {
     background: color-mix(in srgb, var(--list-color) 22%, #26282c);
+  }
+  .sticky .sortable-row.dragging {
+    background: color-mix(in srgb, var(--list-color, #94a3b8) 22%, #26282c);
   }
   .sticky-list .check {
     --check-color: color-mix(in srgb, var(--list-color) 70%, #ddd);

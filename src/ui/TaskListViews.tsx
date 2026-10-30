@@ -1,6 +1,8 @@
 import type { Task } from "../core/types";
 import { addDays, formatDateKo, relativeDayKo } from "../core/dates";
 import { compareTasks } from "../core/today";
+import { compareListOrder } from "../core/order";
+import { SortableTaskList } from "./sortable";
 import { useTable, useToday } from "./hooks";
 import { EmptyLine, QuickAdd, Section, TaskItem } from "./tasks";
 import { showListSticky } from "./windows";
@@ -64,7 +66,7 @@ export function ListView({ listId, onOpenTask, selectedTaskId }: Props & { listI
   const tasks = useTable("tasks").filter((t) => t.list_id === listId);
   const lists = useTable("lists");
   const list = lists.find((l) => l.id === listId);
-  const todo = tasks.filter((t) => t.status === "todo").sort(compareTasks);
+  const todo = tasks.filter((t) => t.status === "todo").sort(compareListOrder);
   const done = tasks
     .filter((t) => t.status === "done")
     .sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
@@ -84,11 +86,10 @@ export function ListView({ listId, onOpenTask, selectedTaskId }: Props & { listI
         </p>
       </header>
       <QuickAdd defaults={{ list_id: listId }} autoFocus />
-      <div className="task-list">
-        {todo.map((t) => (
-          <TaskItem key={t.id} task={t} lists={lists} onOpen={onOpenTask} selected={t.id === selectedTaskId} />
-        ))}
-      </div>
+      <SortableTaskList
+        tasks={todo}
+        renderItem={(t) => <TaskItem task={t} lists={lists} onOpen={onOpenTask} selected={t.id === selectedTaskId} />}
+      />
       {todo.length === 0 && <EmptyLine>남은 할 일이 없어요.</EmptyLine>}
       {done.length > 0 && (
         <Section title="완료" count={done.length} collapsible defaultOpen={false}>

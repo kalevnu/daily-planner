@@ -79,6 +79,21 @@ function Click([int] $x, [int] $y) {
   Start-Sleep -Milliseconds 400
 }
 
+# Press, move in small steps, release: a real mouse drag.
+function Drag([int] $x1, [int] $y1, [int] $x2, [int] $y2) {
+  [W]::SetCursorPos($x1, $y1) | Out-Null
+  Start-Sleep -Milliseconds 150
+  [W]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 150
+  for ($i = 1; $i -le 20; $i++) {
+    [W]::SetCursorPos([int]($x1 + ($x2 - $x1) * $i / 20), [int]($y1 + ($y2 - $y1) * $i / 20)) | Out-Null
+    Start-Sleep -Milliseconds 30
+  }
+  Start-Sleep -Milliseconds 250
+  [W]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 800
+}
+
 function Keys($text) { [System.Windows.Forms.SendKeys]::SendWait($text); Start-Sleep -Milliseconds 300 }
 # SendKeys cannot type Korean on the runner's English layout; paste it instead.
 function Paste($text) { Set-Clipboard -Value $text; Start-Sleep -Milliseconds 200; Keys "^v" }
@@ -426,6 +441,30 @@ if ($ls) {
   Start-Sleep -Seconds 1
   UiaDump $ls.Hwnd "list sticky, after add"
   Check "마감일이 스티커 오른쪽 열에 '내일'로 표시" ([bool](Uia $ls.Hwnd "내일"))
+  # A second task without a deadline sorts below the dated one; drag it to the top.
+  Click ([int](($ls.L + $ls.R) / 2)) ($ls.B - 26)
+  Start-Sleep -Milliseconds 500
+  Paste "e2e 끌어올릴 일"
+  Keys "{ENTER}"
+  $null = WaitRows "select id from tasks where title = 'e2e 끌어올릴 일'"
+  Start-Sleep -Seconds 1
+  $workTodo = "select title, sort_order from tasks where status = 'todo' and deleted_at is null and list_id = (select id from lists where name = '업무')"
+  Write-Host "  업무 before drag: $(Sql $workTodo | ConvertTo-Json -Compress)"
+  $row = Uia $ls.Hwnd "e2e 끌어올릴 일"
+  Check "스티커에 끌어올릴 할 일이 보임" ([bool]$row)
+  if ($row) {
+    $r = $row.Current.BoundingRectangle
+    $x = [int]($r.X + 20); $y = [int]($r.Y + $r.Height / 2)
+    Write-Host "  drag from $x,$y to $x,$($ls.T + 36) (sticky top $($ls.T))"
+    Drag $x $y $x ($ls.T + 36)
+    $order = Sql "$workTodo order by sort_order"
+    Write-Host "  업무 after drag: $($order | ConvertTo-Json -Compress)"
+    Check "끌어서 맨 위로 올린 순서가 저장됨" ($order.Count -ge 2 -and $order[0][0] -eq "e2e 끌어올릴 일" -and -not ($order | Where-Object { $null -eq $_[1] })) ($order | ConvertTo-Json -Compress)
+    $top = Uia $ls.Hwnd "e2e 끌어올릴 일"
+    $listed = Uia $ls.Hwnd "e2e 목록 할 일"
+    Check "스티커에서도 맨 위에 보임" ($top -and $listed -and $top.Current.BoundingRectangle.Y -lt $listed.Current.BoundingRectangle.Y)
+    Check "끌고 난 뒤 편집 화면이 열리지 않음" (-not (Uia $ls.Hwnd "반복"))
+  }
   Shot "07c-list-sticky"
   $flagQuery = "select value from settings where id = 'list_sticky:' || (select id from lists where name = '업무')"
   Check "업무 스티커 열림 상태가 저장됨" ("$(Cell $flagQuery)" -like '*"open":true*') "$(Cell $flagQuery)"
@@ -569,6 +608,19 @@ Start-Sleep -Seconds 2
 Check "메인 창을 닫으면 숨겨지고 앱은 계속 실행" (((Visible "Daily Planner").Count -eq 0) -and (@(Get-Process | Where-Object { $_.Path -eq $script:Exe }).Count -gt 0))
 Check "메인 창을 닫아도 메모는 그대로" ((Visible "메모").Count -eq 2)
 
+Stop-App
+
+# ---- upgrade: a database made by 0.4 (no tasks.sort_order) is brought up to date ----
+$before = Cell "select count(*) from tasks where deleted_at is null"
+$py = "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('ALTER TABLE tasks DROP COLUMN sort_order'); c.execute('PRAGMA user_version = 1'); c.commit()"
+python -c $py $DbPath
+$cols = @(Sql "select name from pragma_table_info('tasks')" | ForEach-Object { $_[0] })
+Check "옛 버전 DB 흉내: sort_order 열 없음, 버전 1" (-not ($cols -contains "sort_order") -and (Cell "PRAGMA user_version") -eq 1) "columns=$($cols -join ',')"
+Start-App | Out-Null
+Start-Sleep -Seconds 3
+$cols = @(Sql "select name from pragma_table_info('tasks')" | ForEach-Object { $_[0] })
+Check "업데이트한 앱이 열을 더하고 DB 버전을 2로 올림" (($cols -contains "sort_order") -and (Cell "PRAGMA user_version") -eq 2) "columns=$($cols -join ',') version=$(Cell 'PRAGMA user_version')"
+Check "예전 할 일이 그대로 남음" ((Cell "select count(*) from tasks where deleted_at is null") -eq $before) "before=$before"
 Stop-App
 
 $results | Format-Table -AutoSize | Out-String -Width 300 | Write-Host

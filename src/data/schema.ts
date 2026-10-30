@@ -18,6 +18,7 @@ export const COLUMNS: Record<TableName, Record<string, ColumnType>> = {
     rrule: "TEXT",
     today_pinned_on: "TEXT",
     remind_minutes: "INTEGER",
+    sort_order: "REAL",
   },
   events: {
     title: "TEXT",
@@ -64,4 +65,5 @@ export function createTableSql(table: TableName): string {
   )`;
 }
 
-export const SCHEMA_VERSION = 1;
+// 2: tasks.sort_order (hand-made order inside a list).
+export const SCHEMA_VERSION = 2;

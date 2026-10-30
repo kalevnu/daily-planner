@@ -29,6 +29,7 @@ export interface Task extends SyncFields {
   rrule: string | null; // e.g. "FREQ=WEEKLY;BYDAY=MO"; due_date is the next occurrence
   today_pinned_on: string | null; // YYYY-MM-DD the task was picked for "today"
   remind_minutes: number | null; // minutes before due_date+due_time
+  sort_order?: number | null; // place inside its list once moved by hand; null = by deadline
 }
 
 export interface CalendarEvent extends SyncFields {

@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { buildToday } from "../core/today";
 import { formatDateKo, formatTimeKo, timePart } from "../core/dates";
-import { compareTasks } from "../core/today";
+import { compareListOrder } from "../core/order";
+import { SortableTaskList } from "./sortable";
 import type { Task } from "../core/types";
 import { getRow, getSetting, setSetting, updateRow } from "../data/store";
 import {
@@ -84,7 +85,7 @@ export function ListStickyWindow({ listId: rawId }: { listId: string }) {
   const lists = useTable("lists");
   const list = lists.find((l) => l.id === listId);
   const all = useTable("tasks").filter((t) => t.list_id === listId);
-  const todo = all.filter((t) => t.status === "todo").sort(compareTasks);
+  const todo = all.filter((t) => t.status === "todo").sort(compareListOrder);
   const doneToday = all.filter((t) => t.status === "done" && t.completed_at && t.completed_at.slice(0, 10) === today);
   const [pinned, setPinned] = useState(true);
   const wantPinned = useRef(true);
@@ -148,10 +149,8 @@ export function ListStickyWindow({ listId: rawId }: { listId: string }) {
         </button>
       </div>
       <div className="sticky-body">
-        <div className="task-list">
-          {todo.map(item)}
-          {doneToday.map(item)}
-        </div>
+        <SortableTaskList tasks={todo} renderItem={item} />
+        {doneToday.length > 0 && <div className="task-list">{doneToday.map(item)}</div>}
         {todo.length === 0 && doneToday.length === 0 && <p className="empty">남은 할 일이 없어요.</p>}
       </div>
       <QuickAdd defaults={{ list_id: listId }} placeholder={`${name || "할 일"} 추가 (예: 금요일 보고서)`} />
