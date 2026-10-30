@@ -614,12 +614,12 @@ Stop-App
 $before = Cell "select count(*) from tasks where deleted_at is null"
 $py = "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('ALTER TABLE tasks DROP COLUMN sort_order'); c.execute('PRAGMA user_version = 1'); c.commit()"
 python -c $py $DbPath
-$cols = @(Sql "select name from pragma_table_info('tasks')" | ForEach-Object { $_[0] })
-Check "옛 버전 DB 흉내: sort_order 열 없음, 버전 1" (-not ($cols -contains "sort_order") -and (Cell "PRAGMA user_version") -eq 1) "columns=$($cols -join ',')"
+# One-column rows unroll in PowerShell, so ask for a single number instead.
+$hasOrder = "select count(*) from pragma_table_info('tasks') where name = 'sort_order'"
+Check "옛 버전 DB 흉내: sort_order 열 없음, 버전 1" ((Cell $hasOrder) -eq 0 -and (Cell "PRAGMA user_version") -eq 1) "sort_order=$(Cell $hasOrder) version=$(Cell 'PRAGMA user_version')"
 Start-App | Out-Null
 Start-Sleep -Seconds 3
-$cols = @(Sql "select name from pragma_table_info('tasks')" | ForEach-Object { $_[0] })
-Check "업데이트한 앱이 열을 더하고 DB 버전을 2로 올림" (($cols -contains "sort_order") -and (Cell "PRAGMA user_version") -eq 2) "columns=$($cols -join ',') version=$(Cell 'PRAGMA user_version')"
+Check "업데이트한 앱이 열을 더하고 DB 버전을 2로 올림" ((Cell $hasOrder) -eq 1 -and (Cell "PRAGMA user_version") -eq 2) "sort_order=$(Cell $hasOrder) version=$(Cell 'PRAGMA user_version')"
 Check "예전 할 일이 그대로 남음" ((Cell "select count(*) from tasks where deleted_at is null") -eq $before) "before=$before"
 Stop-App
 
