@@ -49,6 +49,13 @@ export function SyncSettings() {
   const [editServer, setEditServer] = useState(false);
 
   const act = async (fn: () => Promise<void>) => {
+    setMessage(null);
+    if (s.phase === "signed-out") {
+      // The buttons stay pressable; say what is missing instead of greying them out.
+      if (!email.trim() || !password) return setMessage("이메일과 비밀번호를 넣어 주세요.");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setMessage("이메일 주소 형식을 확인해 주세요.");
+      if (password.length < 6) return setMessage("비밀번호는 6자 이상이어야 해요.");
+    }
     setBusy(true);
     setMessage(null);
     try {
@@ -101,6 +108,7 @@ export function SyncSettings() {
       {s.phase === "signed-out" && (
         <form
           className="sync-form"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             act(() => signIn(email, password));
@@ -109,13 +117,13 @@ export function SyncSettings() {
           <input type="email" placeholder="이메일" aria-label="동기화 이메일" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" placeholder="비밀번호 (6자 이상)" aria-label="동기화 비밀번호" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <div className="button-row">
-            <button className="btn btn-primary" type="submit" disabled={busy || !email || !password}>
+            <button className="btn btn-primary" type="submit" disabled={busy}>
               로그인
             </button>
             <button
               className="btn"
               type="button"
-              disabled={busy || !email || !password}
+              disabled={busy}
               onClick={() =>
                 act(async () => {
                   const ok = await signUp(email, password);
