@@ -1021,6 +1021,61 @@ textarea {
   background: color-mix(in srgb, var(--bg) 55%, var(--surface));
 }
 
+/* Today: a 2px accent frame drawn above the event bars (which otherwise
+   cover the tinted background), the date in a filled pill, and the same
+   frame on today's column in the week and day views. */
+.calendar .fc-daygrid-day.fc-day-today,
+.calendar .fc-timegrid-col.fc-day-today {
+  position: relative;
+}
+/* On the cell itself: FullCalendar uses the frame's ::after as a clearfix. */
+.calendar .fc-daygrid-day.fc-day-today::after,
+.calendar .fc-timegrid-col.fc-day-today::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 6;
+}
+.calendar .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  margin: 4px 4px 2px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.calendar .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number::before {
+  content: "오늘 ";
+  font-weight: 600;
+  opacity: 0.9;
+}
+.calendar .fc-col-header-cell.fc-day-today {
+  background: var(--accent-soft);
+}
+.calendar .fc .fc-col-header-cell.fc-day-today .fc-col-header-cell-cushion {
+  color: var(--accent);
+  font-weight: 700;
+}
+/* Saturday in blue, as on a Korean wall calendar (Sunday is already red). */
+.calendar .fc-day-sat .fc-col-header-cell-cushion,
+.calendar .fc-day-sat .fc-daygrid-day-number {
+  color: var(--accent);
+}
+.calendar .fc-day-dim.fc-day-sat .fc-daygrid-day-number,
+.calendar .fc-day-dim.fc-day-sun .fc-daygrid-day-number {
+  opacity: 0.6;
+}
+/* The 오늘 button stands out while today is off screen. */
+.calendar-toolbar .btn.today-away {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 /* ---- notes ------------------------------------------------------------- */
 .note-yellow {
   background: var(--note-yellow) !important;

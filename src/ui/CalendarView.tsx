@@ -207,6 +207,10 @@ export function CalendarView({ onOpenTask }: Props) {
     updateRow("events", p.eventId, { start: r.start, end: r.end, all_day: allDay ? 1 : 0 } as Partial<CalendarEvent>);
   };
 
+  const todayStr = toDateStr(new Date());
+  const todayAway = !!range && (todayStr < range.from || todayStr > range.to);
+  const todayLabel = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+
   return (
     <div className="calendar">
       <div className="calendar-hint">
@@ -220,7 +224,7 @@ export function CalendarView({ onOpenTask }: Props) {
           <button className="btn" onClick={() => go(1)} aria-label="다음">
             ›
           </button>
-          <button className="btn" onClick={today}>
+          <button className={`btn ${todayAway ? "today-away" : ""}`} onClick={today} title={`오늘로 돌아가기 (${todayLabel})`}>
             오늘
           </button>
           <button className={`btn academic-toggle ${hideAcademic ? "" : "on"}`} aria-pressed={!hideAcademic} onClick={toggleAcademic} title="한양대 대학원 학사일정 보이기/숨기기">

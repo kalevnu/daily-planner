@@ -180,6 +180,36 @@ function AcademicPixels($win) {
   $g.Dispose(); $bmp.Dispose()
   return $n
 }
+# Today's cell is framed in the accent blue (#2f6fed light / #6a9bff dark).
+# Count those pixels below the toolbar, where nothing else uses the color.
+function TodayFramePixels($win) {
+  $w = $win.R - $win.L; $h = $win.B - $win.T
+  $bmp = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($win.L, $win.T, 0, 0, $bmp.Size)
+  $n = 0
+  for ($y = 200; $y -lt $h; $y += 2) {
+    for ($x = 0; $x -lt $w; $x++) {
+      $c = $bmp.GetPixel($x, $y)
+      if (([Math]::Abs($c.R - 47) -lt 18 -and [Math]::Abs($c.G - 111) -lt 18 -and [Math]::Abs($c.B - 237) -lt 18) -or
+          ([Math]::Abs($c.R - 106) -lt 18 -and [Math]::Abs($c.G - 155) -lt 18 -and [Math]::Abs($c.B - 255) -lt 18)) { $n++ }
+    }
+  }
+  $g.Dispose(); $bmp.Dispose()
+  return $n
+}
+# The calendar's 오늘 button (the sidebar has a 오늘 item too, further left).
+function TodayButton($win) {
+  for ($try = 0; $try -lt 8; $try++) {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($win.Hwnd)
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($el in $all) {
+      if ($el.Current.Name -eq "오늘" -and $el.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $el.Current.BoundingRectangle.X -gt $win.L + 300) { return $el }
+    }
+    Start-Sleep -Milliseconds 750
+  }
+  return $null
+}
 # Window list for the log: title, z-order, topmost and owner.
 function DumpWindows($label) {
   Write-Host "--- windows: $label"
@@ -478,11 +508,30 @@ $nav = Uia $main.Hwnd "*캘린더*" -Like
 if ($nav) { ClickEl $nav }
 Start-Sleep -Seconds 2
 Check "캘린더가 이번 달 제목으로 열림" ([bool](Uia $main.Hwnd (Get-Date -Format "yyyy년 M월")))
+$main = First "Daily Planner"
+$framed = TodayFramePixels $main
+Check "오늘 칸에 파란 테두리와 날짜 표시" ($framed -gt 150) "accent px=$framed"
+Shot "07a-calendar-today"
 [W]::SetCursorPos($main.L + 900, $main.T + 450) | Out-Null # grid, clear of the stickies
 for ($i = 0; $i -lt 5; $i++) { [W]::mouse_event(0x0800, 0, 0, [uint32]::MaxValue - 119, [UIntPtr]::Zero); Start-Sleep -Milliseconds 250 } # 5 notches down
 Start-Sleep -Seconds 1
 Check "휠 5칸이면 다음 달로 넘어감" ([bool](Uia $main.Hwnd ((Get-Date).AddMonths(1).ToString("yyyy년 M월"))))
 Shot "07b-calendar-wheel"
+$away = TodayFramePixels $main
+Check "다른 달로 가면 오늘 테두리가 화면에서 빠짐" ($away * 3 -lt $framed) "accent px=$away (오늘 보일 때 $framed)"
+$todayBtn = TodayButton $main
+Check "캘린더에 오늘 버튼" ([bool]$todayBtn)
+if ($todayBtn) {
+  ClickEl $todayBtn
+  Start-Sleep -Seconds 1
+  $back = TodayFramePixels $main
+  Check "오늘 버튼을 누르면 이번 달과 오늘 테두리로 돌아옴" ([bool](Uia $main.Hwnd (Get-Date -Format "yyyy년 M월")) -and $back -gt 150) "accent px=$back"
+  Shot "07c2-calendar-back-to-today"
+  # The 학사일정 checks below expect next month on screen.
+  [W]::SetCursorPos($main.L + 900, $main.T + 450) | Out-Null
+  for ($i = 0; $i -lt 5; $i++) { [W]::mouse_event(0x0800, 0, 0, [uint32]::MaxValue - 119, [UIntPtr]::Zero); Start-Sleep -Milliseconds 250 }
+  Start-Sleep -Seconds 1
+}
 
 # ---- 학사일정: bundled on first run, shown with 🎓, can be hidden --------------------
 $academic = Cell "select count(*) from events where id like 'hyu-grad:%' and deleted_at is null"
