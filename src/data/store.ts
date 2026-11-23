@@ -1,5 +1,5 @@
 import type { TableName, Tables } from "../core/types";
-import { COLUMNS, SCHEMA_VERSION, TABLES, columnsOf, createTableSql } from "./schema";
+import { COLUMNS, SCHEMA_VERSION, SYNC_BASE_SQL, TABLES, columnsOf, createTableSql } from "./schema";
 import { isTauri } from "../platform/env";
 
 type Row = Record<string, unknown>;
@@ -12,6 +12,12 @@ interface Backend {
   // Changes only the given columns, so two windows saving different fields of
   // the same row (a note's text and its position) never undo each other.
   patch(table: TableName, id: string, fields: Row): Promise<void>;
+  // Drops a row outright, for local duplicates that must not sync.
+  drop(table: TableName, id: string): Promise<void>;
+  // Sync bases: per row, the hash it had when last synced (see core/sync).
+  bases(table: TableName): Promise<Map<string, string>>;
+  setBases(table: TableName, entries: [id: string, hash: string][]): Promise<void>;
+  clearBases(): Promise<void>;
 }
 
 class SqliteBackend implements Backend {
@@ -31,6 +37,7 @@ class SqliteBackend implements Backend {
             if (!have.has(name)) await db.execute(`ALTER TABLE ${t} ADD COLUMN "${name}" ${type}`);
           }
         }
+        await db.execute(SYNC_BASE_SQL);
         await db.execute(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       }
       return db;
@@ -62,6 +69,35 @@ class SqliteBackend implements Backend {
     const sets = cols.map((c, i) => `"${c}" = $${i + 1}`);
     await db.execute(`UPDATE ${table} SET ${sets.join(", ")} WHERE id = $${cols.length + 1}`, [...cols.map((c) => fields[c] ?? null), id]);
   }
+
+  async drop(table: TableName, id: string): Promise<void> {
+    const db = await this.db;
+    await db.execute(`DELETE FROM ${table} WHERE id = $1`, [id]);
+  }
+
+  async bases(table: TableName): Promise<Map<string, string>> {
+    const db = await this.db;
+    const rows = await db.select<{ id: string; hash: string }[]>("SELECT id, hash FROM sync_base WHERE tbl = $1", [table]);
+    return new Map(rows.map((r) => [r.id, r.hash]));
+  }
+
+  async setBases(table: TableName, entries: [string, string][]): Promise<void> {
+    const db = await this.db;
+    // Batched so a first sync of thousands of rows is a few statements.
+    for (let i = 0; i < entries.length; i += 300) {
+      const chunk = entries.slice(i, i + 300);
+      const values = chunk.map((_, j) => `($1, $${j * 2 + 2}, $${j * 2 + 3})`).join(", ");
+      await db.execute(
+        `INSERT INTO sync_base (tbl, id, hash) VALUES ${values} ON CONFLICT(tbl, id) DO UPDATE SET hash = excluded.hash`,
+        [table, ...chunk.flat()],
+      );
+    }
+  }
+
+  async clearBases(): Promise<void> {
+    const db = await this.db;
+    await db.execute("DELETE FROM sync_base");
+  }
 }
 
 class LocalBackend implements Backend {
@@ -90,6 +126,31 @@ class LocalBackend implements Backend {
     rows[i] = { ...rows[i], ...fields, id };
     localStorage.setItem(this.key(table), JSON.stringify(rows));
   }
+
+  async drop(table: TableName, id: string): Promise<void> {
+    const rows = (await this.all(table)).filter((r) => r.id !== id);
+    localStorage.setItem(this.key(table), JSON.stringify(rows));
+  }
+
+  private baseKey = (t: TableName) => `planner-sync-base:${t}`;
+
+  async bases(table: TableName): Promise<Map<string, string>> {
+    try {
+      return new Map(Object.entries(JSON.parse(localStorage.getItem(this.baseKey(table)) ?? "{}")));
+    } catch {
+      return new Map();
+    }
+  }
+
+  async setBases(table: TableName, entries: [string, string][]): Promise<void> {
+    const m = await this.bases(table);
+    for (const [id, h] of entries) m.set(id, h);
+    localStorage.setItem(this.baseKey(table), JSON.stringify(Object.fromEntries(m)));
+  }
+
+  async clearBases(): Promise<void> {
+    for (const t of TABLES) localStorage.removeItem(this.baseKey(t));
+  }
 }
 
 const backend: Backend = isTauri ? new SqliteBackend() : new LocalBackend();
@@ -101,7 +162,7 @@ const listeners = new Set<Listener>();
 const source = Math.random().toString(36).slice(2);
 const channel = !isTauri && typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("planner-db") : null;
 
-function notify(table: TableName) {
+export function notify(table: TableName) {
   listeners.forEach((l) => l(table));
   if (isTauri) {
     import("@tauri-apps/api/event").then(({ emit }) => emit("db-changed", { table, source }));
@@ -173,6 +234,17 @@ export async function deleteRow(table: TableName, id: string): Promise<void> {
 export async function restoreRow(table: TableName, id: string): Promise<void> {
   await updateRow(table, id, { deleted_at: null } as never);
 }
+
+// ---- sync access ------------------------------------------------------------
+// Used only by the sync engine: these write rows exactly as given (no new
+// updated_at) and leave the change notice to the caller (`notify`).
+
+export const rawRows = (table: TableName): Promise<Row[]> => backend.all(table);
+export const putRaw = (table: TableName, row: Row) => backend.put(table, row);
+export const dropRaw = (table: TableName, id: string) => backend.drop(table, id);
+export const syncBases = (table: TableName) => backend.bases(table);
+export const setSyncBases = (table: TableName, entries: [string, string][]) => backend.setBases(table, entries);
+export const clearSyncBases = () => backend.clearBases();
 
 // ---- settings (key/value) -------------------------------------------------
 

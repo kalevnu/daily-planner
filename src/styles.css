@@ -106,6 +106,8 @@ input[type="text"],
 input:not([type]),
 input[type="date"],
 input[type="time"],
+input[type="email"],
+input[type="password"],
 select,
 textarea {
   background: var(--surface);
@@ -1559,4 +1561,12 @@ kbd {
     box-shadow: var(--shadow);
     z-index: 20;
   }
+}
+
+.sync-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+  padding: 4px 0 14px;
 }

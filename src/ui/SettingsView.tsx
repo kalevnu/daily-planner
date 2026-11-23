@@ -9,6 +9,7 @@ import { appVersion, checkForUpdate, type AvailableUpdate } from "../platform/up
 import { ACADEMIC_SYNCED_KEY, refreshAcademic } from "../data/academic";
 import { isAcademic } from "../core/academic";
 import { useTable } from "./hooks";
+import { SyncSettings } from "./SyncSettings";
 
 function Toggle({ label, on, onChange, disabled }: { label: string; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -280,6 +281,8 @@ export function SettingsView() {
         </div>
       </div>
 
+      <SyncSettings />
+
       <AcademicRow />
 
       <UpdateRow />
@@ -302,7 +305,7 @@ export function SettingsView() {
         </li>
       </ul>
 
-      <p className="muted small">데이터는 이 PC에만 저장돼요 (planner.db). 업데이트해도 그대로 남아요. PC↔폰 동기화는 2단계에서 추가될 예정이에요.</p>
+      <p className="muted small">데이터는 이 PC에 저장되고(planner.db), 동기화에 로그인하면 계정에도 올라가요. 업데이트해도 그대로 남아요.</p>
     </div>
   );
 }
