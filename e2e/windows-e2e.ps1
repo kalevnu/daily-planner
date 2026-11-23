@@ -792,6 +792,10 @@ if (-not $SbUrl -or -not $SbKey) {
   Start-App | Out-Null
   Check "새 PC 흉내: 빈 DB로 시작 (기본 목록 2개, 환영 메모)" ((Cell "select count(*) from lists") -eq 2 -and (Cell "select count(*) from tasks") -eq 0)
   foreach ($b in (Visible "오늘 브리핑")) { [W]::PostMessage($b.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+  OpenSettings
+  $join = Uia $main.Hwnd "처음이면 가입"
+  if ($join) { ClickEl $join }
+  Check "빈 칸으로 '처음이면 가입'을 누르면 무엇을 넣을지 알려줌" ([bool](Uia $main.Hwnd "이메일과 비밀번호를 넣어 주세요."))
   Check "새 PC에서 같은 계정으로 로그인" (SignInHere)
   Start-Sleep -Seconds 3
   $t = Cell "select count(*) from tasks where deleted_at is null"
