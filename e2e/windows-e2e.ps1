@@ -619,9 +619,146 @@ $hasOrder = "select count(*) from pragma_table_info('tasks') where name = 'sort_
 Check "옛 버전 DB 흉내: sort_order 열 없음, 버전 1" ((Cell $hasOrder) -eq 0 -and (Cell "PRAGMA user_version") -eq 1) "sort_order=$(Cell $hasOrder) version=$(Cell 'PRAGMA user_version')"
 Start-App | Out-Null
 Start-Sleep -Seconds 3
-Check "업데이트한 앱이 열을 더하고 DB 버전을 2로 올림" ((Cell $hasOrder) -eq 1 -and (Cell "PRAGMA user_version") -eq 2) "sort_order=$(Cell $hasOrder) version=$(Cell 'PRAGMA user_version')"
+$hasBase = "select count(*) from sqlite_master where name = 'sync_base'"
+Check "업데이트한 앱이 열·동기화 표를 더하고 DB 버전을 3으로 올림" ((Cell $hasOrder) -eq 1 -and (Cell $hasBase) -eq 1 -and (Cell "PRAGMA user_version") -eq 3) "sort_order=$(Cell $hasOrder) sync_base=$(Cell $hasBase) version=$(Cell 'PRAGMA user_version')"
 Check "예전 할 일이 그대로 남음" ((Cell "select count(*) from tasks where deleted_at is null") -eq $before) "before=$before"
 Stop-App
+
+# ---- PC-to-PC sync through the real server ---------------------------------------
+# Uses a test account on the server built into the app (src/data/syncServer.ts).
+# "Another PC" is played twice: by REST calls with the same account, and by
+# wiping this PC's data and signing in again as a new install would.
+$serverSrc = Get-Content (Join-Path $PSScriptRoot "..\src\data\syncServer.ts") -Raw
+$SbUrl = [regex]::Match($serverSrc, 'SYNC_SERVER_URL = "([^"]*)"').Groups[1].Value
+$SbKey = [regex]::Match($serverSrc, 'SYNC_SERVER_ANON_KEY = "([^"]*)"').Groups[1].Value
+$SbEmail = "e2e@daily-planner.test"
+$SbPassword = "e2e-daily-planner-sync"
+
+function SbCall($method, $path, $body, $token) {
+  $h = @{ apikey = $SbKey }
+  if ($token) { $h.Authorization = "Bearer $token" }
+  $req = @{ Method = $method; Uri = "$SbUrl$path"; Headers = $h; ContentType = "application/json; charset=utf-8" }
+  if ($null -ne $body) { $req.Body = [Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 10 -Compress)) }
+  Invoke-RestMethod @req
+}
+function SbToken {
+  $cred = @{ email = $SbEmail; password = $SbPassword }
+  try { (SbCall POST "/auth/v1/token?grant_type=password" $cred).access_token }
+  catch { (SbCall POST "/auth/v1/signup" $cred).access_token }
+}
+function SbRows($token) { @(SbCall GET "/rest/v1/sync_rows?select=tbl,id,data,updated_at&order=seq" $null $token) }
+function Live($rows, $tbl) { @($rows | Where-Object { $_.tbl -eq $tbl -and -not $_.data.deleted_at }) }
+
+# Types into a field of the main window: UIA value first, keyboard if that did not take.
+function SetField($hwnd, $name, $text) {
+  $el = Uia $hwnd $name
+  if (-not $el) { return $false }
+  try { $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($text) } catch {}
+  Start-Sleep -Milliseconds 300
+  $now = try { $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } catch { "" }
+  if ($now -ne $text) { $el.SetFocus(); Keys "^a"; Paste $text }
+  return $true
+}
+function OpenSettings {
+  $script:main = First "Daily Planner"
+  $nav = Uia $main.Hwnd "*설정"
+  if (-not $nav) { $nav = Uia $main.Hwnd "*설정*" -Like }
+  if ($nav) { ClickEl $nav }
+  Start-Sleep -Seconds 1
+}
+function SignInHere {
+  OpenSettings
+  Click ($main.L + 60) ($main.T + 520); Start-Sleep -Milliseconds 400
+  $ok = (SetField $main.Hwnd "동기화 이메일" $SbEmail) -and (SetField $main.Hwnd "동기화 비밀번호" $SbPassword)
+  $btn = Uia $main.Hwnd "로그인"
+  if ($btn) { ClickEl $btn }
+  $st = $null
+  for ($i = 0; $i -lt 30 -and -not $st; $i++) { Start-Sleep -Seconds 1; $st = Uia $main.Hwnd "*동기화됨" -Like }
+  if (-not $st) { UiaDump $main.Hwnd "sync sign-in" }
+  return ($ok -and [bool]$st)
+}
+function WaitCell($query, $want, $secs = 20) {
+  $v = $null
+  for ($i = 0; $i -lt $secs; $i++) { $v = Cell $query; if ("$v" -eq "$want") { return $v }; Start-Sleep -Seconds 1 }
+  return $v
+}
+
+if (-not $SbUrl -or -not $SbKey) {
+  Check "동기화 서버 주소가 앱에 들어 있음" $false "src/data/syncServer.ts is empty"
+} else {
+  $token = SbToken
+  Check "테스트 계정으로 서버 로그인" ([bool]$token)
+  # Start from an empty account so counts below mean this run.
+  SbCall DELETE "/rest/v1/sync_rows?id=neq.__none__" $null $token | Out-Null
+  Check "테스트 계정 비움" ((SbRows $token).Count -eq 0)
+
+  Start-App | Out-Null
+  $localTasks = Cell "select count(*) from tasks where deleted_at is null"
+  $localNotes = Cell "select count(*) from notes where deleted_at is null"
+  Check "앱에서 동기화 로그인" (SignInHere)
+  Shot "10-sync-signed-in"
+  Start-Sleep -Seconds 3
+  $rows = SbRows $token
+  Check "이 PC의 할 일·목록·메모가 서버에 올라감" ((Live $rows "tasks").Count -eq $localTasks -and (Live $rows "lists").Count -eq 2 -and (Live $rows "notes").Count -eq $localNotes) "server tasks=$((Live $rows 'tasks').Count)/$localTasks lists=$((Live $rows 'lists').Count) notes=$((Live $rows 'notes').Count)/$localNotes"
+  Check "학사일정은 올리지 않음" (@($rows | Where-Object { $_.id -like "hyu-grad:*" }).Count -eq 0)
+
+  # Another PC adds a task: it shows up here without touching anything.
+  $work = (Live $rows "lists" | Where-Object { $_.data.name -eq "업무" } | Select-Object -First 1).id
+  $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+  $otherId = [guid]::NewGuid().ToString()
+  $task = @{ id = $otherId; created_at = $now; updated_at = $now; deleted_at = $null; list_id = $work; title = "다른 PC에서 추가"; note = ""; due_date = (Get-Date).ToString("yyyy-MM-dd"); due_time = $null; priority = 0; status = "todo"; completed_at = $null; rrule = $null; today_pinned_on = $null; remind_minutes = $null; sort_order = $null }
+  SbCall POST "/rest/v1/rpc/sync_push" @{ rows = @(@{ tbl = "tasks"; id = $otherId; data = $task; updated_at = $now }) } $token | Out-Null
+  $got = WaitCell "select count(*) from tasks where id='$otherId' and title='다른 PC에서 추가'" 1 20
+  Check "다른 PC에서 추가한 할 일이 20초 안에 이 PC에 나타남" ("$got" -eq "1")
+
+  # The other PC renames it a second later.
+  $later = (Get-Date).ToUniversalTime().AddSeconds(1).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+  $renamed = $task.Clone(); $renamed.title = "다른 PC에서 고침"; $renamed.updated_at = $later
+  SbCall POST "/rest/v1/rpc/sync_push" @{ rows = @(@{ tbl = "tasks"; id = $otherId; data = $renamed; updated_at = $later }) } $token | Out-Null
+  $got = WaitCell "select title from tasks where id='$otherId'" "다른 PC에서 고침" 20
+  Check "다른 PC에서 고친 제목이 이 PC에 반영됨" ("$got" -eq "다른 PC에서 고침") "$got"
+
+  # A task added here goes up to the server. The today page has the quick-add field.
+  $nav = Uia $main.Hwnd "*오늘*" -Like
+  if ($nav) { ClickEl $nav; Start-Sleep -Seconds 1 }
+  $field = Uia $main.Hwnd "*할 일 추가*" -Like
+  $added = $false
+  if ($field) {
+    $pt = ClearPoint $field.Current.BoundingRectangle; Click $pt[0] $pt[1]; Start-Sleep -Milliseconds 500
+    Paste "e2e 이 PC에서 추가"; Keys "{ENTER}"
+    $added = ("$(WaitCell "select count(*) from tasks where title='e2e 이 PC에서 추가'" 1 5)" -eq "1")
+  }
+  Check "이 PC에서 할 일 추가 (빠른 입력)" $added
+  $up = $null
+  for ($i = 0; $i -lt 15 -and -not $up; $i++) { Start-Sleep -Seconds 1; $up = Live (SbRows $token) "tasks" | Where-Object { $_.data.title -eq "e2e 이 PC에서 추가" } }
+  Check "이 PC에서 추가한 할 일이 15초 안에 서버에 올라감" ([bool]$up)
+  Stop-App
+
+  # ---- a second PC: fresh install data, same account ----
+  $rowsBefore = SbRows $token
+  $expectTasks = (Live $rowsBefore "tasks").Count
+  $expectNotes = (Live $rowsBefore "notes").Count
+  Remove-Item $DbPath -Force -ErrorAction SilentlyContinue
+  Remove-Item (Join-Path $env:LOCALAPPDATA "com.kalevnu.dailyplanner\EBWebView") -Recurse -Force -ErrorAction SilentlyContinue
+  Start-App | Out-Null
+  Check "새 PC 흉내: 빈 DB로 시작 (기본 목록 2개, 환영 메모)" ((Cell "select count(*) from lists") -eq 2 -and (Cell "select count(*) from tasks") -eq 0)
+  foreach ($b in (Visible "오늘 브리핑")) { [W]::PostMessage($b.Hwnd, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+  Check "새 PC에서 같은 계정으로 로그인" (SignInHere)
+  Start-Sleep -Seconds 3
+  $t = Cell "select count(*) from tasks where deleted_at is null"
+  Check "새 PC로 할 일이 모두 내려옴" ($t -eq $expectTasks) "local=$t server=$expectTasks"
+  Check "다른 PC에서 고친 할 일도 그대로" ((Cell "select title from tasks where id='$otherId'") -eq "다른 PC에서 고침")
+  $l = Cell "select count(*) from lists where deleted_at is null"
+  Check "업무·개인 목록이 두 벌로 늘지 않음" ($l -eq 2) "lists=$l"
+  $n = Cell "select count(*) from notes where deleted_at is null"
+  Check "환영 메모가 두 개로 늘지 않음" ($n -eq $expectNotes) "local=$n server=$expectNotes"
+  $orphans = Cell "select count(*) from tasks where list_id is not null and list_id not in (select id from lists)"
+  Check "모든 할 일이 있는 목록에 속함" ($orphans -eq 0) "orphans=$orphans"
+  $rowsAfter = SbRows $token
+  Check "서버의 목록도 2개 그대로" ((Live $rowsAfter "lists").Count -eq 2) "lists=$((Live $rowsAfter 'lists').Count)"
+  Shot "11-sync-second-pc"
+  Stop-App
+}
 
 $results | Format-Table -AutoSize | Out-String -Width 300 | Write-Host
 $md = "| 검사 | 결과 | 내용 |`n| --- | --- | --- |`n" + (($results | ForEach-Object { "| $($_.Check) | $($_.Result) | $($_.Detail -replace '\|', '/') |" }) -join "`n")

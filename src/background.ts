@@ -9,6 +9,7 @@ import { isTauri } from "./platform/env";
 import { notify, onAppEvent, openBriefing, registerShortcuts, showMainWindow } from "./platform/desktop";
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, shortcutSettingKey, type ShortcutAction, type Shortcuts } from "./core/shortcuts";
 import { checkForUpdate } from "./platform/update";
+import { startSync } from "./data/cloud";
 import { showToast } from "./ui/toast";
 import { LIST_COLORS, createNote, showNote } from "./ui/actions";
 import { TODAY_STICKY_OPEN_KEY, listStickyState, showListSticky, showTodaySticky } from "./ui/windows";
@@ -108,6 +109,7 @@ export async function startBackground() {
   started = true;
   await firstRunSetup();
   keepAcademicFresh();
+  startSync();
 
   // Reminders work in the browser preview too.
   checkReminders();

@@ -65,5 +65,14 @@ export function createTableSql(table: TableName): string {
   )`;
 }
 
+// Per row, the hash it had when last synced with the cloud (core/sync.ts).
+export const SYNC_BASE_SQL = `CREATE TABLE IF NOT EXISTS sync_base (
+    tbl TEXT NOT NULL,
+    id TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    PRIMARY KEY (tbl, id)
+  )`;
+
 // 2: tasks.sort_order (hand-made order inside a list).
-export const SCHEMA_VERSION = 2;
+// 3: sync_base table (cloud sync).
+export const SCHEMA_VERSION = 3;
